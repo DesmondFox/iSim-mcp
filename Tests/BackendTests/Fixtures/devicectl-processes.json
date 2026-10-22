@@ -1,0 +1,41 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "device",
+      "info",
+      "processes",
+      "-d",
+      "00008110-0000000000000001",
+      "-q",
+      "-j",
+      "dc-procs.json"
+    ],
+    "commandType": "devicectl.device.info.processes",
+    "environment": {},
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.13.5"
+  },
+  "result": {
+    "deviceIdentifier": "6568AA7C-B513-5808-B708-3D7A31EE67C2",
+    "runningProcesses": [
+      {
+        "executable": "file:///System/Library/CoreServices/SpringBoard.app/SpringBoard",
+        "processIdentifier": 8681
+      },
+      {
+        "executable": "file:///Applications/Preferences.app/Preferences",
+        "processIdentifier": 13095
+      },
+      {
+        "executable": "file:///private/var/containers/Bundle/Application/A845C876-1A55-44A8-9ABC-4B5A543129B2/Runner.app/PlugIns/Share.appex/Share",
+        "processIdentifier": 4242
+      },
+      {
+        "executable": "file:///private/var/containers/Bundle/Application/A845C876-1A55-44A8-9ABC-4B5A543129B2/Runner.app/Runner",
+        "processIdentifier": 4243
+      }
+    ]
+  }
+}

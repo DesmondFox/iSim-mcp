@@ -1,0 +1,100 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "-q",
+      "-j",
+      "-",
+      "device",
+      "info",
+      "apps",
+      "-d",
+      "00008110-0000000000000001",
+      "--include-all-apps"
+    ],
+    "commandType": "devicectl.device.info.apps",
+    "environment": {},
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.13.5"
+  },
+  "result": {
+    "apps": [
+      {
+        "appClip": false,
+        "builtByDeveloper": true,
+        "bundleIdentifier": "com.example.demo",
+        "bundleVersion": "29",
+        "containerAccessible": true,
+        "defaultApp": false,
+        "hidden": false,
+        "internalApp": false,
+        "name": "Demo (staging)",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/A845C876-1A55-44A8-9ABC-4B5A543129B2/Runner.app/",
+        "version": "1.0.32"
+      },
+      {
+        "appClip": false,
+        "builtByDeveloper": true,
+        "bundleIdentifier": "dev.isimmcp.VYL36DLB34.AgentRunner.xctrunner",
+        "bundleVersion": "1",
+        "containerAccessible": true,
+        "defaultApp": false,
+        "hidden": false,
+        "internalApp": false,
+        "name": "ISimAgentRunner-Runner",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/4AE12CEE-1138-4072-AF60-5EBD6F0F81AA/ISimAgentRunner-Runner.app/",
+        "version": "1.0"
+      },
+      {
+        "appClip": false,
+        "builtByDeveloper": false,
+        "bundleIdentifier": "com.apple.mobilesafari",
+        "bundleVersion": "8625.1.29.10.33",
+        "containerAccessible": false,
+        "defaultApp": true,
+        "hidden": false,
+        "internalApp": false,
+        "name": "Safari",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/B9FEE4DC-4A40-44CA-8650-EDC9EB47CE87/MobileSafari.app/",
+        "version": "27.0.1"
+      },
+      {
+        "appClip": false,
+        "builtByDeveloper": false,
+        "bundleIdentifier": "com.apple.Preferences",
+        "bundleVersion": "2027.0.10.401",
+        "containerAccessible": false,
+        "defaultApp": true,
+        "hidden": false,
+        "internalApp": false,
+        "name": "Settings",
+        "removable": false,
+        "url": "file:///Applications/Preferences.app/",
+        "version": "1.0"
+      },
+      {
+        "appClip": false,
+        "builtByDeveloper": false,
+        "bundleIdentifier": "com.apple.weather",
+        "bundleVersion": "1454.1",
+        "containerAccessible": false,
+        "defaultApp": true,
+        "hidden": false,
+        "internalApp": false,
+        "name": "Weather",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/54DE03CF-4B84-45AD-B943-76DEC0E7F4D2/Weather.app/",
+        "version": "6.0"
+      }
+    ],
+    "defaultAppsIncluded": true,
+    "deviceIdentifier": "6568AA7C-B513-5808-B708-3D7A31EE67C2",
+    "hiddenAppsIncluded": true,
+    "internalAppsIncluded": true,
+    "removableAppsIncluded": true
+  }
+}

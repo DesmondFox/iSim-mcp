@@ -1,0 +1,66 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "info",
+      "displays",
+      "-d",
+      "00008110-0000000000000001",
+      "-q",
+      "-j",
+      "dc-displays-phone.json"
+    ],
+    "commandType" : "devicectl.device.info.displays",
+    "environment" : {
+
+    },
+    "jsonVersion" : 5,
+    "outcome" : "success",
+    "version" : "651.13.5"
+  },
+  "result" : {
+    "backlightState" : "activeOn",
+    "displays" : [
+      {
+        "backlightState" : "activeOn",
+        "bounds" : [
+          [
+            0,
+            0
+          ],
+          [
+            1284,
+            2778
+          ]
+        ],
+        "chromeIdentifier" : "com.apple.dt.devicekit.chrome.phone5",
+        "currentOrientation" : "rot0",
+        "displayId" : 1,
+        "framebufferMaskIdentifier" : "B1DBC15F-5F9C-45C7-8C3D-4A3D5602CCFC",
+        "name" : "LCD",
+        "nativeOrientation" : "rot0",
+        "nativeSize" : [
+          1284,
+          2778
+        ],
+        "physicalSize" : [
+          2.8034934997558594,
+          6.065502166748047
+        ],
+        "pointScale" : 3,
+        "primary" : true,
+        "type" : {
+          "integrated" : {
+
+          }
+        }
+      }
+    ],
+    "orientation" : {
+      "currentDeviceNonFlatOrientation" : "portrait",
+      "currentDeviceOrientation" : "faceUp",
+      "currentDeviceOrientationLocked" : false
+    }
+  }
+}

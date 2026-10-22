@@ -347,12 +347,21 @@ iSim-mcp/
 
 Если 0A не взлетит за разумное время, на симуляторе тоже используем агента: медленнее старт, зато публичный API.
 
-### Фаза 1 — скелет и MVP для обоих видов устройств (2–3 дня)
+### Фаза 1 — скелет и MVP для обоих видов устройств (2–3 дня) ✅ 22.10.2026
 
 - SwiftPM-пакет, stdio-сервер, `ToolRegistry`, `ToolRouter`, `CapabilityMatrix`, toolsets, `ProcessKit`.
 - Тулзы: `doctor`, `set_active_device`, `list_devices`, `boot_device`, `shutdown_device`, `list_apps`, `install_app`, `uninstall_app`, `launch_app`, `terminate_app`, `open_url`, `screenshot`.
 - Подключение к Claude Code: `claude mcp add isim -- ~/.local/bin/isim-mcp`.
 - **Готово, когда** агент ставит приложение, запускает его и присылает скриншот — и на симуляторе, и на iPhone.
+
+**Итог:** критерий выполнен через MCP-клиент по stdio на iPhone 16 Pro Simulator (iOS 27.0) и iPhone 14 Plus (iOS 27.0.1, USB): install → launch → screenshot → terminate → uninstall. Каждый тулз отвечает за 0,1–0,5 с, установка на iPhone ~1,4 с. 79 unit-тестов (парсинг по фикстурам, построение команд через `ScriptedRunner`, резолвер устройств, реестр тулзов, ресайз картинок). Что отличается от плана:
+- Simulator.app в Xcode 27 нет, его заменил DeviceHub.app (`com.apple.dt.Devices`); `boot_device(open_simulator_app)` открывает его.
+- `devicectl process terminate` принимает только pid: `terminate_app` на iPhone ищет главный процесс по URL бандла (`info apps --bundle-id` + `info processes`, расширения `.appex` пропускаются).
+- `list_apps` на iPhone без `include_system` показывает только developer-сборки (так `devicectl` работает по умолчанию); App Store-приложения видны с `include_system`. Встроенные приложения отделяются по префиксу `com.apple.`: Safari в iOS 27 лежит в `/private/var/containers` и помечен `removable`.
+- `simctl install` в Xcode 27 принимает и `.ipa`; `install_app` заранее читает `Info.plist` (из `.ipa` — через `unzip -p`) и не даёт поставить симуляторную сборку на iPhone и наоборот.
+- Масштаб экрана для `screenshot` берётся из `devicectl device info displays` (работает и на симуляторе) и кэшируется на устройство.
+- `ProcessKit` гасит при таймауте и отмене всю группу процессов (Foundation запускает ребёнка лидером новой группы) и не ждёт pipe дольше 2 с после выхода процесса, если его потомок унаследовал stdout.
+- Отложено: `launch_app(capture_output)` — в фазу 5 вместе с `JobManager`; параметр `display` у `screenshot` — до фазы 2 (`get_screen_info`).
 
 ### Фаза 2 — окружение (2 дня)
 

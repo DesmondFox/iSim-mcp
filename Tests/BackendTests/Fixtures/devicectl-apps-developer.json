@@ -1,0 +1,57 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "device",
+      "info",
+      "apps",
+      "--device",
+      "00008110-0000000000000001",
+      "-q",
+      "--json-output",
+      "dc-apps.json"
+    ],
+    "commandType": "devicectl.device.info.apps",
+    "environment": {},
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.13.5"
+  },
+  "result": {
+    "apps": [
+      {
+        "appClip": false,
+        "builtByDeveloper": true,
+        "bundleIdentifier": "com.example.demo",
+        "bundleVersion": "29",
+        "containerAccessible": true,
+        "defaultApp": false,
+        "hidden": false,
+        "internalApp": false,
+        "name": "Demo (staging)",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/A845C876-1A55-44A8-9ABC-4B5A543129B2/Runner.app/",
+        "version": "1.0.32"
+      },
+      {
+        "appClip": false,
+        "builtByDeveloper": true,
+        "bundleIdentifier": "dev.isimmcp.VYL36DLB34.AgentRunner.xctrunner",
+        "bundleVersion": "1",
+        "containerAccessible": true,
+        "defaultApp": false,
+        "hidden": false,
+        "internalApp": false,
+        "name": "ISimAgentRunner-Runner",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/4AE12CEE-1138-4072-AF60-5EBD6F0F81AA/ISimAgentRunner-Runner.app/",
+        "version": "1.0"
+      }
+    ],
+    "defaultAppsIncluded": false,
+    "deviceIdentifier": "6568AA7C-B513-5808-B708-3D7A31EE67C2",
+    "hiddenAppsIncluded": false,
+    "internalAppsIncluded": false,
+    "removableAppsIncluded": true
+  }
+}

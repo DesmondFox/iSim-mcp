@@ -1,0 +1,57 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "process",
+      "launch",
+      "-d",
+      "8D408511-219C-42B6-98FB-C0ED9F56836F",
+      "--terminate-existing",
+      "com.apple.Preferences",
+      "-q",
+      "-j",
+      "dc-launch-sim.json"
+    ],
+    "commandType" : "devicectl.device.process.launch",
+    "environment" : {
+
+    },
+    "jsonVersion" : 5,
+    "outcome" : "success",
+    "version" : "651.13.5"
+  },
+  "result" : {
+    "deviceIdentifier" : "8D408511-219C-42B6-98FB-C0ED9F56836F",
+    "launchOptions" : {
+      "activatedWhenStarted" : true,
+      "arguments" : [
+
+      ],
+      "environmentVariables" : {
+        "TERM" : "vt100"
+      },
+      "platformSpecificOptions" : {
+
+      },
+      "startStopped" : false,
+      "terminateExistingInstances" : true,
+      "user" : {
+        "active" : true
+      }
+    },
+    "process" : {
+      "auditToken" : [
+        501,
+        501,
+        20,
+        501,
+        20,
+        23825,
+        100043,
+        1884879
+      ],
+      "processIdentifier" : 23825
+    }
+  }
+}

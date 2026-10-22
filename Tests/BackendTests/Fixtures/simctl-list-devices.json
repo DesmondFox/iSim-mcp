@@ -1,0 +1,71 @@
+{
+  "devices": {
+    "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+      {
+        "dataPath": "/Users/test/Library/Developer/CoreSimulator/Devices/8D408511-219C-42B6-98FB-C0ED9F56836F/data",
+        "dataPathSize": 5081337856,
+        "logPath": "/Users/test/Library/Logs/CoreSimulator/8D408511-219C-42B6-98FB-C0ED9F56836F",
+        "udid": "8D408511-219C-42B6-98FB-C0ED9F56836F",
+        "lastUsedAt": "2026-10-20T15:18:51Z",
+        "isAvailable": true,
+        "logPathSize": 401408,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
+        "state": "Booted",
+        "name": "iPhone 16 Pro"
+      },
+      {
+        "dataPath": "/Users/test/Library/Developer/CoreSimulator/Devices/67AF5AA0-5204-43AB-8E60-D3E556B33C92/data",
+        "dataPathSize": 18337792,
+        "logPath": "/Users/test/Library/Logs/CoreSimulator/67AF5AA0-5204-43AB-8E60-D3E556B33C92",
+        "udid": "67AF5AA0-5204-43AB-8E60-D3E556B33C92",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB",
+        "state": "Shutdown",
+        "name": "iPad Pro 11-inch (M5)"
+      }
+    ],
+    "com.apple.CoreSimulator.SimRuntime.iOS-27-1": [
+      {
+        "dataPath": "/Users/test/Library/Developer/CoreSimulator/Devices/20CED849-2366-40B2-BD63-A084003A09C4/data",
+        "dataPathSize": 18337792,
+        "logPath": "/Users/test/Library/Logs/CoreSimulator/20CED849-2366-40B2-BD63-A084003A09C4",
+        "udid": "20CED849-2366-40B2-BD63-A084003A09C4",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+        "state": "Shutdown",
+        "name": "iPhone Duo"
+      },
+      {
+        "dataPath": "/Users/test/Library/Developer/CoreSimulator/Devices/77CFCAA1-3DCC-46DB-BE90-DEF5FA03F4C8/data",
+        "dataPathSize": 4495159296,
+        "logPath": "/Users/test/Library/Logs/CoreSimulator/77CFCAA1-3DCC-46DB-BE90-DEF5FA03F4C8",
+        "udid": "77CFCAA1-3DCC-46DB-BE90-DEF5FA03F4C8",
+        "lastUsedAt": "2026-10-20T15:08:24Z",
+        "isAvailable": true,
+        "logPathSize": 376832,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+        "state": "Shutdown",
+        "name": "iPhone Duo"
+      }
+    ],
+    "com.apple.CoreSimulator.SimRuntime.watchOS-12-0": [
+      {
+        "udid": "11111111-2222-3333-4444-555555555555",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-46mm",
+        "state": "Shutdown",
+        "name": "Apple Watch Series 11 (46mm)"
+      }
+    ],
+    "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [
+      {
+        "udid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        "isAvailable": false,
+        "availabilityError": "runtime profile not found",
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+        "state": "Shutdown",
+        "name": "iPhone 17"
+      }
+    ]
+  }
+}

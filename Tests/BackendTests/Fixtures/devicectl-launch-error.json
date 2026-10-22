@@ -1,0 +1,59 @@
+{
+  "error" : {
+    "code" : 10002,
+    "domain" : "com.apple.dt.CoreDeviceError",
+    "userInfo" : {
+      "BundleIdentifier" : {
+        "string" : "com.does.not.exist"
+      },
+      "NSLocalizedDescription" : {
+        "string" : "The application failed to launch."
+      },
+      "NSLocalizedFailureReason" : {
+        "string" : "The requested application com.does.not.exist is not installed."
+      },
+      "NSLocalizedRecoverySuggestion" : {
+        "string" : "Provide a valid bundle identifier."
+      },
+      "NSUnderlyingError" : {
+        "error" : {
+          "code" : -10814,
+          "domain" : "NSOSStatusErrorDomain",
+          "userInfo" : {
+            "_LSFile" : {
+              "string" : "LSBindingEvaluator.mm"
+            },
+            "_LSFunction" : {
+              "string" : "runEvaluator"
+            },
+            "_LSLine" : {
+              "int" : 1975
+            }
+          }
+        }
+      }
+    }
+  },
+  "errorSignature" : "(com.apple.dt.CoreDeviceError 10002 (NSOSStatusErrorDomain -10814))",
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "process",
+      "launch",
+      "-d",
+      "8D408511-219C-42B6-98FB-C0ED9F56836F",
+      "com.does.not.exist",
+      "-q",
+      "-j",
+      "dc-launch-err.json"
+    ],
+    "commandType" : "devicectl.device.process.launch",
+    "environment" : {
+
+    },
+    "jsonVersion" : 5,
+    "outcome" : "failed",
+    "version" : "651.13.5"
+  }
+}
