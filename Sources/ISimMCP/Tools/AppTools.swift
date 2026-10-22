@@ -97,8 +97,10 @@ enum AppTools {
             terminateExisting: try arguments.bool("terminate_existing", default: true),
             startStopped: try arguments.bool("start_stopped", default: false)
         )
-        let pid = try await context.router.backend(.launchApp, for: device, as: (any AppManaging).self)
-            .launch(udid: device.udid, bundleId: bundleId, options: options)
+        let backend = try context.router.backend(.launchApp, for: device, as: (any AppManaging).self)
+        // Apps load accessibility at launch; with it on, UI tools can read this app.
+        await context.accessibility.prepare(device)
+        let pid = try await backend.launch(udid: device.udid, bundleId: bundleId, options: options)
         return .text("Launched \(bundleId)\(pid.map { " (pid \($0))" } ?? "") on \"\(device.name)\".")
     }
 

@@ -94,6 +94,10 @@ enum DeviceTools {
         if !wasBooted {
             try await lifecycle.boot(udid: device.udid, wait: wait)
         }
+        if wait || wasBooted {
+            // Before any app starts, so UI tools can read every app on this simulator.
+            await context.accessibility.prepare(device)
+        }
         if openApp {
             _ = try? await context.runner.run("/usr/bin/open", ["-b", "com.apple.dt.Devices"], timeout: .seconds(15))
         }
@@ -321,7 +325,11 @@ enum DeviceTools {
         let wasRunning = device.state != .shutdown
         if wasRunning { try await lifecycle.shutdown(udid: device.udid) }
         try await lifecycle.erase(udid: device.udid)
-        if wasRunning { try await lifecycle.boot(udid: device.udid, wait: true) }
+        await context.accessibility.forget(device.udid)
+        if wasRunning {
+            try await lifecycle.boot(udid: device.udid, wait: true)
+            await context.accessibility.prepare(device)
+        }
         return .text("Erased \"\(device.name)\" (\(device.udid))" + (wasRunning ? " and booted it again." : "."))
     }
 

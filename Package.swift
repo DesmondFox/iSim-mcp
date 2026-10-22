@@ -27,6 +27,7 @@ let package = Package(
                 "DeviceCore",
                 "SimctlBackend",
                 "DevicectlBackend",
+                "SimBridgeBackend",
                 "ProcessKit",
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "Logging", package: "swift-log"),
@@ -35,6 +36,9 @@ let package = Package(
         .target(name: "DeviceCore", dependencies: ["ProcessKit"]),
         .target(name: "SimctlBackend", dependencies: ["DeviceCore", "ProcessKit"]),
         .target(name: "DevicectlBackend", dependencies: ["DeviceCore", "ProcessKit"]),
+        .target(name: "SimBridgeBackend", dependencies: ["DeviceCore", "SimBridge"]),
+        // Objective-C: private CoreSimulator and accessibility APIs, resolved at runtime.
+        .target(name: "SimBridge", linkerSettings: [.linkedFramework("AppKit")]),
         .target(name: "ProcessKit"),
 
         .target(name: "TestSupport", dependencies: ["ProcessKit"], path: "Tests/TestSupport"),
@@ -42,7 +46,7 @@ let package = Package(
         .testTarget(name: "DeviceCoreTests", dependencies: ["DeviceCore", "TestSupport"]),
         .testTarget(
             name: "BackendTests",
-            dependencies: ["SimctlBackend", "DevicectlBackend", "DeviceCore", "ProcessKit", "TestSupport"],
+            dependencies: ["SimctlBackend", "DevicectlBackend", "SimBridgeBackend", "DeviceCore", "ProcessKit", "TestSupport"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

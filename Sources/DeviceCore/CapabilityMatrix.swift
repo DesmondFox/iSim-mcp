@@ -27,6 +27,16 @@ public enum Capability: String, Sendable, CaseIterable {
     case biometrics
     case pasteboard
     case push
+    case tap
+    case swipe
+    case typeText
+    case pressKey
+    case pressButton
+    case describeUI
+    case describePoint
+    case findElements
+    case waitFor
+    case systemAlert
 
     /// Tool name used in error messages.
     public var toolName: String {
@@ -56,6 +66,16 @@ public enum Capability: String, Sendable, CaseIterable {
         case .biometrics: "biometrics"
         case .pasteboard: "set_pasteboard"
         case .push: "send_push"
+        case .tap: "tap"
+        case .swipe: "swipe"
+        case .typeText: "type_text"
+        case .pressKey: "press_key"
+        case .pressButton: "press_button"
+        case .describeUI: "describe_ui"
+        case .describePoint: "describe_point"
+        case .findElements: "find_elements"
+        case .waitFor: "wait_for"
+        case .systemAlert: "handle_system_alert"
         }
     }
 }
@@ -64,6 +84,8 @@ public enum Capability: String, Sendable, CaseIterable {
 public enum BackendID: String, Sendable, CaseIterable {
     case simctl
     case devicectl
+    /// Private CoreSimulator APIs: HID input through dtuhidd, accessibility through AXPTranslator.
+    case simbridge
 }
 
 /// Which backend serves which capability on which kind of device (PLAN.md, section 5).
@@ -119,5 +141,20 @@ public struct CapabilityMatrix: Sendable {
         .biometrics: Entry(simulator: .devicectl, physical: nil, hint: "Face ID and Touch ID can only be simulated on simulators."),
         .pasteboard: Entry(simulator: .devicectl, physical: .devicectl),
         .push: Entry(simulator: .simctl, physical: nil, hint: "An iPhone receives pushes only through APNs, which iSim-mcp does not support yet."),
+        .tap: uiEntry,
+        .swipe: uiEntry,
+        .typeText: uiEntry,
+        .pressKey: uiEntry,
+        .pressButton: uiEntry,
+        .describeUI: uiEntry,
+        .describePoint: uiEntry,
+        .findElements: uiEntry,
+        .waitFor: uiEntry,
+        .systemAlert: uiEntry,
     ])
+
+    /// Input and UI inspection on iPhones need the on-device XCUITest agent (PLAN.md, phase 4).
+    private static let uiEntry = Entry(
+        simulator: .simbridge, physical: nil,
+        hint: "Input and UI inspection on iPhones need an on-device UI agent, which iSim-mcp does not have yet. Use screenshot to look at the screen.")
 }

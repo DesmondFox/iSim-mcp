@@ -109,7 +109,8 @@ struct ToolRegistryTests {
             "list_apps", "get_app_info", "install_app", "uninstall_app", "launch_app", "terminate_app", "open_url",
             "list_processes", "get_app_container",
             "screenshot", "get_screen_info", "add_media",
-            "set_orientation",
+            "describe_ui", "find_elements", "describe_point", "tap", "swipe", "type_text", "press_key", "press_button", "wait_for",
+            "handle_system_alert", "set_orientation",
         ])
     }
 
@@ -209,11 +210,14 @@ struct ToolRegistryTests {
         runner.on("simctl shutdown")
         runner.on("simctl erase")
         runner.on("simctl boot")
+        runner.on("defaults read com.apple.Accessibility", stdout: "1\n")
         let result = try await ISimServer.makeRegistry(toolsets: Toolset.defaults)
             .call("erase_device", arguments: ["device": "iPhone 16 Pro"], context: context)
         #expect(text(result) == "Erased \"iPhone 16 Pro\" (SIM-1) and booted it again.")
         #expect(runner.calls.map(\.commandLine).filter { !$0.contains("list devices") } == [
             "simctl shutdown SIM-1", "simctl erase SIM-1", "simctl boot SIM-1", "simctl bootstatus SIM-1",
+            // Erasing resets the accessibility preference, so it is checked again.
+            "simctl spawn SIM-1 defaults read com.apple.Accessibility ApplicationAccessibilityEnabled",
         ])
     }
 

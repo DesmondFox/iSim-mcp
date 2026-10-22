@@ -159,6 +159,19 @@ public struct SimctlBackend: DeviceListing, SimulatorLifecycle, DeviceRebooting,
         return SimctlParser.processes(fromLaunchctlList: result.stdoutString)
     }
 
+    /// Apps load their accessibility runtime at launch only when this preference is on; without it their UI tree is empty.
+    public func isApplicationAccessibilityEnabled(udid: String) async throws -> Bool {
+        let result = try await runner.run(
+            xcrun, ["simctl", "spawn", udid, "defaults", "read", "com.apple.Accessibility", "ApplicationAccessibilityEnabled"],
+            timeout: defaultTimeout)
+        // A missing key exits with 1: never set, so off.
+        return result.succeeded && result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+
+    public func enableApplicationAccessibility(udid: String) async throws {
+        try await simctl(["spawn", udid, "defaults", "write", "com.apple.Accessibility", "ApplicationAccessibilityEnabled", "-bool", "true"])
+    }
+
     public func containerPath(udid: String, bundleId: String, container: String) async throws -> String {
         let result = try await runner.run(xcrun, ["simctl", "get_app_container", udid, bundleId, container], timeout: defaultTimeout)
         if result.succeeded {

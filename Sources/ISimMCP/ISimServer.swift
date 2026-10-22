@@ -15,6 +15,9 @@ public enum ISimServer {
         Typical flow: list_devices → boot_device (simulator) → install_app → launch_app → screenshot.
         Preparing screenshots: configure_ui (appearance), override_status_bar (preset=screenshot), set_location, \
         set_permission — these are in the `system` toolset.
+        Driving an app (simulators): describe_ui shows the screen's elements; tap, type_text and swipe take an `element` \
+        selector (identifier or label from describe_ui) or coordinates; wait_for waits for the next screen; \
+        handle_system_alert answers permission prompts.
         Coordinates for UI tools are in points; screenshot reports how image pixels map to points.
         If anything fails, call doctor.
         """

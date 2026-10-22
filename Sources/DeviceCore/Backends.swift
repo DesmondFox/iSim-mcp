@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 // Capabilities a backend can provide. `ToolRouter` looks a backend up via `CapabilityMatrix`
@@ -105,4 +106,21 @@ public protocol PasteboardAccessing: Sendable {
 public protocol PushSending: Sendable {
     /// `payloadPath`: a JSON file with an `aps` dictionary.
     func sendPush(udid: String, bundleId: String, payloadPath: String) async throws
+}
+
+/// Touches, keys and hardware buttons. Points are in the interface orientation, like screenshots and the UI tree.
+public protocol InputInjecting: Sendable {
+    /// `count` taps in a row, each held for `hold`.
+    func tap(udid: String, at point: CGPoint, count: Int, hold: Duration) async throws
+    func swipe(udid: String, from start: CGPoint, to end: CGPoint, duration: Duration) async throws
+    /// Presses the strokes in order; the focused element receives them.
+    func pressKeys(udid: String, _ strokes: [KeyStroke]) async throws
+    func pressButton(udid: String, _ button: HardwareButton, hold: Duration) async throws
+}
+
+public protocol AccessibilityProviding: Sendable {
+    /// The frontmost application with its descendants; `maxDepth` nil reads every level.
+    func uiTree(udid: String, maxDepth: Int?) async throws -> UIElement
+    /// The deepest element at the point, without children.
+    func element(udid: String, at point: CGPoint) async throws -> UIElement?
 }

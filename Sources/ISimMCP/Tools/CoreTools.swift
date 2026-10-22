@@ -67,6 +67,9 @@ enum CoreTools {
             report.info(booted.isEmpty
                 ? "No booted simulators (boot one with boot_device)"
                 : "Booted simulators: " + booted.map { "\($0.name) (iOS \($0.osVersion ?? "?"), \($0.udid))" }.joined(separator: ", "))
+            for simulator in booted {
+                await checkUI(on: simulator, context: context, report: &report)
+            }
         }
 
         for device in devices {
@@ -99,6 +102,33 @@ enum CoreTools {
         }
 
         return report.result
+    }
+
+    /// UI tools on a booted simulator: the HID daemon answers, the accessibility tree is readable,
+    /// and apps load accessibility at launch.
+    private static func checkUI(on simulator: Device, context: ToolContext, report: inout DoctorReport) async {
+        let clock = ContinuousClock()
+        let start = clock.now
+        do {
+            try await context.simbridge.checkInput(udid: simulator.udid)
+            report.ok("\(simulator.name): input via dtuhidd works (\(Int((clock.now - start).inSeconds * 1000)) ms)")
+        } catch {
+            report.warn("\(simulator.name): input does not work: \(error)")
+        }
+        do {
+            let root = try await context.simbridge.uiTree(udid: simulator.udid, maxDepth: 0)
+            if root.isEmptyApplication {
+                report.warn("\(simulator.name): the frontmost app shows no accessibility tree; relaunch it with launch_app.")
+            } else {
+                report.ok("\(simulator.name): accessibility works, frontmost: \(root.label ?? "SpringBoard")")
+            }
+        } catch {
+            report.warn("\(simulator.name): accessibility does not work: \(error)")
+        }
+        if let enabled = try? await context.simctl.isApplicationAccessibilityEnabled(udid: simulator.udid), !enabled {
+            report.info("\(simulator.name): apps do not load accessibility yet; the first UI tool or launch_app turns it on, "
+                + "apps started before need a relaunch")
+        }
     }
 
     static let setActiveDevice = ToolDefinition(

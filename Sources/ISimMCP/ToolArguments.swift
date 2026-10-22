@@ -1,3 +1,4 @@
+import CoreGraphics
 import DeviceCore
 import Foundation
 import MCP
@@ -120,6 +121,47 @@ public struct ToolArguments: Sendable {
     /// An optional boolean: nil when the parameter is absent.
     public func optionalBool(_ key: String) throws(ISimError) -> Bool? {
         values[key] == nil || values[key] == .null ? nil : try bool(key, default: false)
+    }
+
+    public func object(_ key: String) throws(ISimError) -> [String: Value]? {
+        switch values[key] {
+        case nil, .null?: return nil
+        case .object(let object)?: return object
+        default: throw .invalidArgument("`\(key)` must be an object.")
+        }
+    }
+
+    /// `{x, y}` in points.
+    public func point(_ key: String) throws(ISimError) -> CGPoint? {
+        guard let object = try object(key) else { return nil }
+        let fields = ToolArguments(object)
+        guard let x = try fields.double("x"), let y = try fields.double("y") else {
+            throw .invalidArgument("`\(key)` needs both x and y (points).")
+        }
+        return CGPoint(x: x, y: y)
+    }
+
+    /// An element selector object: identifier, label, label_contains, value, role, index.
+    public func selector(_ key: String) throws(ISimError) -> ElementSelector? {
+        guard let object = try object(key) else { return nil }
+        let fields = ToolArguments(object)
+        let known: Set<String> = ["identifier", "label", "label_contains", "value", "role", "index"]
+        if let unknown = object.keys.sorted().first(where: { !known.contains($0) }) {
+            throw .invalidArgument("`\(key).\(unknown)` is not a selector field. Use: identifier, label, label_contains, value, role, index.")
+        }
+        let selector = ElementSelector(
+            identifier: try fields.string("identifier"),
+            label: try fields.string("label"),
+            labelContains: try fields.string("label_contains"),
+            value: try fields.string("value"),
+            role: try fields.string("role"),
+            index: try fields.int("index")
+        )
+        guard !selector.isEmpty else {
+            throw .invalidArgument("`\(key)` must name at least one of identifier, label, label_contains, value or role.")
+        }
+        if let index = selector.index, index < 0 { throw .invalidArgument("`\(key).index` must be 0 or more.") }
+        return selector
     }
 
     /// The common optional `device` parameter.

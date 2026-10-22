@@ -56,6 +56,33 @@ enum Schema {
         return .object(schema)
     }
 
+    /// An element of the frontmost app's accessibility tree, as describe_ui shows it.
+    static func selector(_ description: String) -> Value {
+        [
+            "type": "object",
+            "description": .string(description),
+            "properties": [
+                "identifier": ["type": "string", "description": "Accessibility identifier, exact (id=… in describe_ui)."],
+                "label": ["type": "string", "description": "Accessibility label, whole text, case-insensitive."],
+                "label_contains": ["type": "string", "description": "Part of the label, case-insensitive."],
+                "value": ["type": "string", "description": "Value, e.g. a text field's text or on/off for a switch."],
+                "role": ["type": "string", "description": "Role as describe_ui shows it: button, text, text_field, switch, cell, …"],
+                "index": ["type": "integer", "minimum": 0, "description": "Which match to take when several match, 0-based in reading order."],
+            ],
+            "additionalProperties": false,
+        ]
+    }
+
+    static func point(_ description: String) -> Value {
+        [
+            "type": "object",
+            "description": .string(description),
+            "properties": ["x": ["type": "number"], "y": ["type": "number"]],
+            "required": ["x", "y"],
+            "additionalProperties": false,
+        ]
+    }
+
     static func stringArray(_ description: String) -> Value {
         ["type": "array", "items": ["type": "string"], "description": .string(description)]
     }
