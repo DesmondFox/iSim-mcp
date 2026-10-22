@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# SwiftPM / Xcode build output
+.build/
+.swiftpm/
+/Packages/
+Package.resolved.orig
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+
+# Agent build cache and local artifacts
+*.xcresult
+*.ipa
+*.dSYM/
+
+# Editors
+.vscode/
+.idea/
+
+# Local environment
+.env
+*.p8
