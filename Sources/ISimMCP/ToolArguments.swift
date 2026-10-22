@@ -56,6 +56,16 @@ public struct ToolArguments: Sendable {
         return value
     }
 
+    public func double(_ key: String) throws(ISimError) -> Double? {
+        switch values[key] {
+        case nil, .null?: return nil
+        case .int(let value)?: return Double(value)
+        case .double(let value)?: return value
+        case .string(let value)? where Double(value) != nil: return Double(value)
+        default: throw .invalidArgument("`\(key)` must be a number.")
+        }
+    }
+
     public func stringArray(_ key: String) throws(ISimError) -> [String] {
         switch values[key] {
         case nil, .null?: return []
@@ -88,13 +98,28 @@ public struct ToolArguments: Sendable {
         }
     }
 
-    /// Value of an enum-like string parameter.
+    /// Value of an enum-like string parameter, matched case-insensitively.
     public func choice<T: RawRepresentable & CaseIterable>(_ key: String, default defaultValue: T) throws(ISimError) -> T where T.RawValue == String {
-        guard let raw = try string(key) else { return defaultValue }
-        guard let value = T(rawValue: raw.lowercased()) else {
-            throw .invalidArgument("`\(key)` must be one of: " + T.allCases.map(\.rawValue).joined(separator: ", ") + ".")
+        try choice(key) ?? defaultValue
+    }
+
+    public func choice<T: RawRepresentable & CaseIterable>(_ key: String, as type: T.Type = T.self) throws(ISimError) -> T? where T.RawValue == String {
+        guard let raw = try choice(key, from: T.allCases.map(\.rawValue)) else { return nil }
+        return T(rawValue: raw)
+    }
+
+    /// One of `values`, matched case-insensitively and returned as spelled in `values`.
+    public func choice(_ key: String, from values: [String]) throws(ISimError) -> String? {
+        guard let raw = try string(key) else { return nil }
+        guard let value = values.first(where: { $0.caseInsensitiveCompare(raw) == .orderedSame }) else {
+            throw .invalidArgument("`\(key)` must be one of: " + values.joined(separator: ", ") + ".")
         }
         return value
+    }
+
+    /// An optional boolean: nil when the parameter is absent.
+    public func optionalBool(_ key: String) throws(ISimError) -> Bool? {
+        values[key] == nil || values[key] == .null ? nil : try bool(key, default: false)
     }
 
     /// The common optional `device` parameter.

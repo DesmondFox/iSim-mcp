@@ -1,0 +1,41 @@
+{
+  "error": {
+    "code": 21020,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSLocalizedDescription": {
+        "string": "Failed to override status bar"
+      },
+      "NSUnderlyingError": {
+        "error": {
+          "code": 22,
+          "domain": "NSPOSIXErrorDomain",
+          "userInfo": {
+            "NSLocalizedDescription": {
+              "string": "Simulator device failed to complete the requested operation."
+            },
+            "NSUnderlyingError": {
+              "error": {
+                "code": 22,
+                "domain": "NSPOSIXErrorDomain",
+                "userInfo": {
+                  "NSLocalizedDescription": {
+                    "string": "Invalid value for cellular bars: expected 0-4"
+                  }
+                }
+              }
+            },
+            "SimCallingSelector": {
+              "string": "_sendStatusBarOverrideDict:error:"
+            }
+          }
+        }
+      }
+    }
+  },
+  "info": {
+    "commandType": "devicectl.device.simulate.statusBar.override",
+    "jsonVersion": 5,
+    "outcome": "failed"
+  }
+}

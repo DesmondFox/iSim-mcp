@@ -1,0 +1,28 @@
+{
+  "info": {
+    "commandType": "devicectl.device.simulate.location.list",
+    "jsonVersion": 5,
+    "outcome": "success"
+  },
+  "result": {
+    "availableScenarios": [
+      {
+        "localizedName": "City Run",
+        "name": "City Run"
+      },
+      {
+        "localizedName": "City Bicycle Ride",
+        "name": "City Bicycle Ride"
+      },
+      {
+        "localizedName": "Freeway Drive",
+        "name": "Freeway Drive"
+      },
+      {
+        "localizedName": "Apple",
+        "name": "Apple"
+      }
+    ],
+    "deviceIdentifier": "11111111-2222-3333-4444-555555555555"
+  }
+}

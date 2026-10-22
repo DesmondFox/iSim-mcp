@@ -1,0 +1,18 @@
+{
+  "info": {
+    "commandType": "devicectl.device.settings.biometrics",
+    "jsonVersion": 5,
+    "outcome": "success"
+  },
+  "result": {
+    "biometrics": [
+      {
+        "enabled": true,
+        "type": "Face ID"
+      }
+    ],
+    "deviceIdentifier": "11111111-2222-3333-4444-555555555555",
+    "enabled": true,
+    "operation": "enable"
+  }
+}

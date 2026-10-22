@@ -21,12 +21,12 @@ MCP-сервер на Swift для управления iOS-устройства
 - информация: apps, processes, displays, lockState, details;
 - экран: `capture screenshot`, `capture screen-record`, `orientation get/set/rotate`;
 - симуляция: `simulate location` (coordinate, route, scenario), `simulate statusBar` (override, preset, clear), `simulate biometrics`;
-- настройки: `settings appearance`, `settings biometrics`, `settings voiceover`, `settings reset`;
+- настройки: `settings appearance` (тема, Dynamic Type, Increase Contrast, Reduce Motion — и на iPhone), `settings biometrics`, `settings voiceover`, `settings reset`;
 - `pasteboard`, Darwin-нотификации (`notification post/observe`), файлы (`copy to/from`, домены `appDataContainer`, `appGroupDataContainer`, `systemCrashLogs`), reboot, rename.
 
 Push-уведомлений в `devicectl` нет (проверены все 102 подкоманды). `notification post` — это Darwin-нотификации, внутренние системные сигналы, а не push.
 
-**`simctl`** остаётся нужен для того, что есть только у симулятора: create, boot, erase, delete, clone, privacy, push, addmedia, Dynamic Type, Increase Contrast, keychain, `spawn` (unified log, defaults), recordVideo.
+**`simctl`** остаётся нужен для того, что есть только у симулятора: create, boot, erase, delete, clone, privacy, push, addmedia, keychain, `spawn` (unified log, defaults, `launchctl list`), recordVideo.
 
 **Чего нет ни там, ни там:**
 - ввода: тапов, свайпов, набора текста;
@@ -158,7 +158,8 @@ iSim-mcp/
 |---|---|---|
 | Выдать разрешения без диалога (`set_permission`) | Нет механизма ни в devicectl, ни в XCUITest | `handle_system_alert` — нажать «Разрешить» в системном диалоге |
 | Стереть устройство (`erase_device`) | `devicectl settings reset` существует, но это личный телефон — **намеренно не поддерживаем** | — |
-| Dynamic Type, Increase Contrast, язык и регион, keychain, добавление фото в галерею, shake | Нет механизма | — |
+| Подмена статус-бара, симуляция Face ID / Touch ID | У iPhone нет CoreDevice-capabilities `Simulate Status Bar` и `Simulate Face ID` | — |
+| Язык и регион, keychain, добавление фото в галерею, shake | Нет механизма | — |
 | Полноценный стрим unified log | `devicectl` отдаёт только stdout/stderr запущенного приложения | `launch_app(capture_output)`; разовый `query_logs` через `log collect` (медленно) |
 
 Всё остальное, включая весь ввод и инспекцию UI, на физическом устройстве будет.
@@ -201,7 +202,7 @@ iSim-mcp/
 | `boot_device` | Загрузить и дождаться полной готовности | `wait`=true, `open_simulator_app`=false | S | — | 1 |
 | `shutdown_device` | Выключить одно или все | `all` | S | — | 1 |
 | `reboot_device` | Перезагрузить | `wait`=true | S | D | 2 |
-| `open_simulator_app` | Открыть Simulator.app с нужным устройством | — | H | — | 2 |
+| `open_simulator_app` | Открыть DeviceHub (бывший Simulator.app) на нужном устройстве | — | H | H | 2 |
 | `list_runtimes` | Рантаймы и поддерживаемые типы устройств | — | S | — | 2 |
 | `create_device` | Создать симулятор | `name`, `device_type`, `runtime` | S | — | 2 |
 | `erase_device` ⚠️ | Сбросить контент и настройки | — | S | — | 2 |
@@ -220,7 +221,7 @@ iSim-mcp/
 | `launch_app` | Запустить; по умолчанию перезапускает. Опционально сразу захватывает stdout/stderr в джобу | `bundle_id`, `args[]`, `env{}`, `terminate_existing`=true, `capture_output`, `start_stopped` | S | D | 1 |
 | `terminate_app` | Остановить | `bundle_id` | S | D | 1 |
 | `open_url` | Deep link, universal link, http-ссылка | `url` | S | D | 1 |
-| `list_processes` | Запущенные процессы | `name_contains` | D? | D | 2 |
+| `list_processes` | Запущенные процессы | `name_contains`, `apps_only`=true | S | D | 2 |
 | `send_memory_warning` | Послать memory warning процессу | `bundle_id` \| `pid` | D? | D | 5 |
 | `get_app_container` | Путь к контейнеру на диске Mac (на iPhone файлов на Mac нет, см. 5.7) | `bundle_id`, `kind` (app/data/groups/`<group-id>`) | S | — | 2 |
 
@@ -260,12 +261,12 @@ iSim-mcp/
 
 | Тулз | Назначение | Ключевые параметры | Сим | Физ | Ф |
 |---|---|---|---|---|---|
-| `configure_ui` | Тема, Dynamic Type, Increase Contrast. Без параметров возвращает текущие значения. На iPhone — только тема | `appearance`, `content_size`, `increase_contrast` | D,S | D | 2 |
+| `configure_ui` | Тема, Dynamic Type, Increase Contrast, Reduce Motion. Без параметров возвращает текущие значения | `appearance`, `content_size`, `increase_contrast`, `reduce_motion` | D | D | 2 |
 | `set_permission` | Выдать, отозвать или сбросить разрешение без диалога | `action` (grant/revoke/reset), `service` (all, calendar, contacts, contacts-limited, location, location-always, photos, photos-add, media-library, microphone, motion, reminders, siri), `bundle_id` | S | — | 2 |
 | `set_location` | Задать координаты или сбросить | `latitude`,`longitude` \| `clear` | D | D | 2 |
 | `simulate_route` | Движение по точкам или встроенный сценарий; стоп — `set_location(clear)` | `waypoints[]` \| `scenario`, `speed` | D | D | 2 |
-| `override_status_bar` | Подменить статус-бар для скриншотов | `preset` \| `time`, `battery_level`, `battery_state`, `cellular_bars`, `wifi_bars`, `data_network`, `operator_name`; `clear` | D | D? | 2 |
-| `biometrics` | Face ID / Touch ID: включить, выключить, успешное или неуспешное совпадение | `action` (enable/disable/match/nonmatch) | D | D? | 2 |
+| `override_status_bar` | Подменить статус-бар для скриншотов | `preset` \| `time`, `battery_level`, `battery_state`, `cellular_mode`, `cellular_bars`, `wifi_mode`, `wifi_bars`, `data_network`; `clear` | D | — | 2 |
+| `biometrics` | Face ID / Touch ID: включить, выключить, успешное или неуспешное совпадение | `action` (status/enable/disable/match/nonmatch) | D | — | 2 |
 | `set_pasteboard` | Положить текст в буфер обмена | `text` | D | D | 2 |
 | `get_pasteboard` | Прочитать буфер обмена | — | D | D | 2 |
 | `send_push` | Push-уведомление. `local` — мгновенно через `simctl push`, без настроек (только симулятор, только обычные push, payload до 4 КБ). `apns` — настоящая отправка через APNs sandbox по device token: работает и на iPhone, и на симуляторе, поддерживает silent, VoIP и Live Activity | `bundle_id`, `payload` \| `payload_path`, `mode` (local/apns; по умолчанию local на симуляторе, apns на iPhone), `device_token` (для apns), `push_type` (alert/background/voip/liveactivity), `priority`, `collapse_id` | S,H | H | 2 / 5 |
@@ -363,10 +364,26 @@ iSim-mcp/
 - `ProcessKit` гасит при таймауте и отмене всю группу процессов (Foundation запускает ребёнка лидером новой группы) и не ждёт pipe дольше 2 с после выхода процесса, если его потомок унаследовал stdout.
 - Отложено: `launch_app(capture_output)` — в фазу 5 вместе с `JobManager`; параметр `display` у `screenshot` — до фазы 2 (`get_screen_info`).
 
-### Фаза 2 — окружение (2 дня)
+### Фаза 2 — окружение (2 дня) ✅ 22.10.2026
 
 - Остальные тулзы фазы 2 из `devices`, `apps`, `screen`, `ui` (`set_orientation`) и весь `system` фазы 2. Проверка всех ячеек с `?`.
 - **Готово, когда** можно подготовить устройство под скриншоты: тёмная тема, статус-бар 9:41, гео, разрешения (на симуляторе).
+
+**Итог:** критерий выполнен через MCP-клиент по stdio. На iPhone 16 Pro Simulator: тёмная тема, статус-бар из пресета `screenshot`, гео, скриншот. Разрешения, Face ID, медиа, push, reboot и erase — на одноразовом симуляторе, созданном и удалённом через `create_device` / `delete_device`. На iPhone 14 Plus — `get_screen_info`, `list_processes`, `get_app_info`, `configure_ui`, `set_orientation` и понятные отказы тулзов, которые есть только на симуляторе. 21 новый тулз (всего 33, в наборе по умолчанию 24), 122 unit-теста. Что отличается от плана:
+- `devicectl settings appearance` в Xcode 27 умеет не только тему, но и Dynamic Type, Increase Contrast и Reduce Motion, в том числе на iPhone. Поэтому `configure_ui` везде идёт через `devicectl`, `simctl ui` не нужен. Accessibility-размеры текста требуют `--larger-accessibility-sizes on`, тулз включает его сам.
+- Ячейки с `?`. `list_processes` на симуляторе: `devicectl info processes` отдаёт процессы хоста без путей к исполняемым файлам, поэтому список берётся из `launchctl list` внутри симулятора (`simctl spawn`), приложения узнаются по меткам `UIKitApplication:<bundle id>`. `override_status_bar` и `biometrics` на iPhone не поддерживаются: у устройства нет capabilities `Simulate Status Bar` и `Simulate Face ID`, а `simulate biometrics` отвечает успехом, ничего не делая. У iPhone нет и `Screen Recording`, так что `start_recording` на нём в фазе 5, скорее всего, будет недоступен.
+- В нескольких случаях CLI молча «успешны», поэтому тулзы проверяют сами: `simctl privacy` принимает неустановленный bundle id и неизвестную службу (camera), `simulate biometrics` — неенролленный Face ID. `simctl addmedia` на несуществующем файле падает с исключением.
+- Статус-бар: у Wi-Fi нет режима `notSupported`; сила сигнала принимается только вместе с `active`, а `active` — только с силой сигнала (Wi-Fi 1–3, сотовая 1–4). Тулз подставляет `active` и полную шкалу. Override дополняет текущие значения, а не заменяет их. Симулятор с 24-часовой локалью рисует время как «09:41», `operator_name` в `devicectl` нет.
+- `simulate_route` работает через `--route-file`: `--waypoints` из командной строки `devicectl` отвергает. Отрицательные координаты передаются как `--longitude=-122.0`, чтобы не стать опцией.
+- `reboot_device` на симуляторе — `simctl shutdown` + `boot` + `bootstatus`: `devicectl reboot` тоже перезапускает симулятор, но возвращается сразу. `erase_device` для загруженного симулятора выключает его, стирает и загружает обратно (~22 с). `erase_device` и `delete_device` требуют явный `device`.
+- `open_simulator_app` открывает DeviceHub сразу на устройстве по URL `devices://device/open?id=<CoreDevice id>` (`devicectl list devices` отдаёт его в `screenViewingURL`), поэтому работает и для iPhone. Что DeviceHub переключается на нужный симулятор, визуально не проверено.
+- `get_app_info` показывает entitlements симуляторных сборок: Xcode кладёт их в секцию `__TEXT,__entitlements`, а не в подпись (`segedit`, запасной путь — `codesign`).
+- `devicectl pasteboard copy` читает stdin, а `ProcessKit` даёт детям пустой stdin, поэтому текст идёт через временный файл. `paste` пишет данные в stdout, поэтому его JSON — в файл.
+- Ошибки `devicectl` включают самую глубокую причину из цепочки `NSUnderlyingError` («Invalid value for cellular bars: expected 0-4»), а если описания нет — строку `ERROR:` из stderr.
+- Приложение в landscape даёт повёрнутый скриншот (2532×1170 px), пересчёт пикселей в точки в `screenshot` это учитывает; `get_screen_info` показывает размер в точках для текущей ориентации. Домашний экран iPhone не поворачивается.
+- `screenshot(display)` — через `devicectl capture screenshot --display-unique-id`, ID дисплея показывает `get_screen_info`.
+- `send_push` пока только `simctl push` на симуляторе; параметр `mode` появится вместе с APNs в фазе 5. Ошибка «Source is not authorized» значит, что приложению не разрешены уведомления.
+- На iPhone не проверялись `reboot_device` и запись/чтение буфера обмена (личный телефон). Буфер подтверждён через `pasteboard info`, гео — установкой и сбросом координат напрямую через `devicectl`.
 
 ### Фаза 3 — ввод и accessibility на симуляторе (4–6 дней)
 

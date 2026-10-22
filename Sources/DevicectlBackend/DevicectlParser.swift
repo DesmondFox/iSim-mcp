@@ -12,16 +12,27 @@ public enum DevicectlParser {
         }
         let outcome = (document["info"] as? [String: Any])?["outcome"] as? String
         guard outcome == "success" else {
-            throw ISimError.commandFailed(command: command, message: errorMessage(document["error"] as? [String: Any]) ?? "outcome \(outcome ?? "unknown")")
+            // Some failures (argument validation) serialize an error without a description; stderr has a line then.
+            let stderr = process.stderrString.split(separator: "\n").first.map { $0.replacingOccurrences(of: "ERROR: ", with: "") }
+            throw ISimError.commandFailed(command: command, message: errorMessage(document["error"] as? [String: Any]) ?? stderr ?? "outcome \(outcome ?? "unknown")")
         }
         return document["result"] as? [String: Any] ?? [:]
     }
 
-    /// Description, failure reason and recovery suggestion of an NSError serialized by devicectl.
+    /// Description, failure reason and recovery suggestion of an NSError serialized by devicectl,
+    /// plus the innermost underlying error, which usually names the actual problem.
     static func errorMessage(_ error: [String: Any]?) -> String? {
+        func string(_ userInfo: [String: Any], _ key: String) -> String? { (userInfo[key] as? [String: Any])?["string"] as? String }
         guard let userInfo = error?["userInfo"] as? [String: Any] else { return nil }
-        let keys = ["NSLocalizedDescription", "NSLocalizedFailureReason", "NSLocalizedRecoverySuggestion"]
-        let parts = keys.compactMap { key in (userInfo[key] as? [String: Any])?["string"] as? String }
+        var parts = ["NSLocalizedDescription", "NSLocalizedFailureReason", "NSLocalizedRecoverySuggestion"].compactMap { string(userInfo, $0) }
+
+        var innermost: String?
+        var underlying = (userInfo["NSUnderlyingError"] as? [String: Any])?["error"] as? [String: Any]
+        while let current = underlying, let info = current["userInfo"] as? [String: Any] {
+            innermost = string(info, "NSLocalizedDescription") ?? innermost
+            underlying = (info["NSUnderlyingError"] as? [String: Any])?["error"] as? [String: Any]
+        }
+        if let innermost, !parts.contains(where: { $0.contains(innermost) }) { parts.append(innermost) }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
@@ -50,7 +61,8 @@ public enum DevicectlParser {
                 model: hardware["marketingName"] as? String ?? hardware["productType"] as? String,
                 isAvailable: true,
                 developerMode: properties["developerModeStatus"] as? String,
-                transport: transport
+                transport: transport,
+                coreDeviceId: entry["identifier"] as? String
             )
         }
         .sorted { $0.name < $1.name }
@@ -94,14 +106,119 @@ public enum DevicectlParser {
     }
 
     public static func mainDisplay(from result: [String: Any]) throws -> DisplayInfo {
-        let displays = result["displays"] as? [[String: Any]] ?? []
-        guard
-            let display = displays.first(where: { $0["primary"] as? Bool == true }) ?? displays.first,
-            let size = display["nativeSize"] as? [Int], size.count == 2,
-            let scale = (display["pointScale"] as? NSNumber)?.doubleValue
-        else {
+        let displays = try screenInfo(from: result).displays
+        return displays.first(where: \.isPrimary) ?? displays[0]
+    }
+
+    public static func screenInfo(from result: [String: Any]) throws -> ScreenInfo {
+        let displays = (result["displays"] as? [[String: Any]] ?? []).compactMap { display -> DisplayInfo? in
+            guard
+                let size = display["nativeSize"] as? [Int], size.count == 2,
+                let scale = (display["pointScale"] as? NSNumber)?.doubleValue
+            else { return nil }
+            return DisplayInfo(
+                widthPixels: size[0],
+                heightPixels: size[1],
+                scale: scale,
+                name: display["name"] as? String,
+                uniqueId: display["uniqueId"] as? String,
+                isPrimary: display["primary"] as? Bool ?? false
+            )
+        }
+        guard !displays.isEmpty else {
             throw ISimError.commandFailed(command: "devicectl device info displays", message: "no display information in the output")
         }
-        return DisplayInfo(widthPixels: size[0], heightPixels: size[1], scale: scale)
+        let orientation = (result["orientation"] as? [String: Any]).map { info in
+            orientationState(
+                raw: info["currentDeviceOrientation"] as? String,
+                nonFlat: info["currentDeviceNonFlatOrientation"] as? String,
+                locked: info["currentDeviceOrientationLocked"] as? Bool)
+        }
+        return ScreenInfo(displays: displays, orientation: orientation)
+    }
+
+    /// Result of `orientation get` / `orientation set`.
+    public static func orientation(from result: [String: Any]) -> OrientationState {
+        orientationState(
+            raw: result["deviceOrientation"] as? String,
+            nonFlat: result["deviceOrientationNonFlat"] as? String,
+            locked: result["deviceIsOrientationLocked"] as? Bool)
+    }
+
+    private static func orientationState(raw: String?, nonFlat: String?, locked: Bool?) -> OrientationState {
+        let orientation = (nonFlat ?? raw).flatMap(DeviceOrientation.init(rawValue:))
+        return OrientationState(
+            orientation: orientation,
+            physical: raw == orientation?.rawValue ? nil : raw,
+            isLocked: locked ?? false)
+    }
+
+    /// Result of `info appearance`.
+    public static func appearance(from result: [String: Any]) -> AppearanceSettings {
+        AppearanceSettings(
+            style: (result["userInterfaceStyle"] as? String).flatMap(InterfaceStyle.init(rawValue:)),
+            contentSize: (result["textSize"] as? String).flatMap(ContentSize.init(displayName:)),
+            increaseContrast: result["increaseContrast"] as? Bool,
+            reduceMotion: (result["reduceMotion"] as? [String: Any])?["enabled"] as? Bool
+        )
+    }
+
+    /// Result of `simulate statusBar show`; empty when nothing is overridden.
+    public static func statusBar(from result: [String: Any]) -> StatusBarOverride {
+        // devicectl wraps some values in backticks (`5G`).
+        func string(_ key: String) -> String? {
+            (result[key] as? String).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "`")) }.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        return StatusBarOverride(
+            time: string("time"),
+            dataNetwork: string("dataNetworkType"),
+            wifiMode: string("wifiMode"),
+            wifiBars: result["wifiStrength"] as? Int,
+            cellularMode: string("cellularMode"),
+            cellularBars: result["cellularStrength"] as? Int,
+            batteryState: string("batteryState"),
+            batteryLevel: result["batteryLevel"] as? Int
+        )
+    }
+
+    /// Result of `settings biometrics`. A physical device reports no types: its biometrics cannot be controlled.
+    public static func biometrics(from result: [String: Any]) -> [BiometricEnrollment] {
+        (result["biometrics"] as? [[String: Any]] ?? []).compactMap { entry in
+            guard let type = entry["type"] as? String else { return nil }
+            return BiometricEnrollment(type: type, enrolled: entry["enabled"] as? Bool ?? false)
+        }
+    }
+
+    /// The first app of `info apps --include-container-paths --include-app-group-identifiers --bundle-id …`.
+    public static func appDetails(from result: [String: Any]) throws -> AppDetails? {
+        guard let entry = (result["apps"] as? [[String: Any]])?.first, let app = try apps(from: ["apps": [entry]]).first else {
+            return nil
+        }
+        let paths = entry["groupContainerPaths"] as? [String: String] ?? [:]
+        let groupIds = Set(entry["appGroupIdentifiers"] as? [String] ?? []).union(paths.keys)
+        var flags: [String] = []
+        if entry["builtByDeveloper"] as? Bool == true { flags.append("developer build") }
+        if entry["appClip"] as? Bool == true { flags.append("app clip") }
+        if entry["hidden"] as? Bool == true { flags.append("hidden") }
+        return AppDetails(
+            app: app,
+            dataContainer: entry["dataContainerPath"] as? String,
+            appGroups: groupIds.sorted().map { AppGroupContainer(identifier: $0, path: paths[$0]) },
+            entitlementsJSON: nil,
+            flags: flags
+        )
+    }
+
+    /// `info processes`, with bundle ids taken from the apps whose bundle holds the executable. Apps come first.
+    public static func processes(from result: [String: Any], apps: [InstalledApp]) -> [RunningProcess] {
+        let bundles = apps.compactMap { app in app.path.map { (url: $0.hasSuffix("/") ? $0 : $0 + "/", bundleId: app.bundleId) } }
+        let processes = (result["runningProcesses"] as? [[String: Any]] ?? []).compactMap { entry -> RunningProcess? in
+            guard let pid = entry["processIdentifier"] as? Int, let executable = entry["executable"] as? String else { return nil }
+            // Only the main executable sits directly in the bundle; extensions live in PlugIns/.
+            let bundleId = bundles.first { executable.hasPrefix($0.url) && !executable.dropFirst($0.url.count).contains("/") }?.bundleId
+            let path = URL(string: executable)?.path ?? executable
+            return RunningProcess(pid: pid, name: (path as NSString).lastPathComponent, bundleId: bundleId, path: path)
+        }
+        return processes.sorted { ($0.bundleId == nil ? 1 : 0, $0.name.lowercased()) < ($1.bundleId == nil ? 1 : 0, $1.name.lowercased()) }
     }
 }

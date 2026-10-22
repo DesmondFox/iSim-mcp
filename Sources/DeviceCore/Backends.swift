@@ -12,6 +12,14 @@ public protocol SimulatorLifecycle: Sendable {
     func boot(udid: String, wait: Bool) async throws
     func shutdown(udid: String) async throws
     func shutdownAll() async throws
+    /// Resets contents and settings; the simulator must be shut down.
+    func erase(udid: String) async throws
+    func delete(udid: String) async throws
+}
+
+public protocol DeviceRebooting: Sendable {
+    /// With `wait`, returns once the device is usable again (where the backend can tell).
+    func reboot(udid: String, wait: Bool) async throws
 }
 
 public protocol AppManaging: Sendable {
@@ -25,6 +33,16 @@ public protocol AppManaging: Sendable {
     func openURL(udid: String, url: String) async throws
 }
 
+public protocol AppInspecting: Sendable {
+    func appInfo(udid: String, bundleId: String) async throws -> AppDetails
+    func listProcesses(udid: String) async throws -> [RunningProcess]
+}
+
+public protocol AppContainerLocating: Sendable {
+    /// `container`: "app", "data", "groups" or an app group identifier.
+    func containerPath(udid: String, bundleId: String, container: String) async throws -> String
+}
+
 public protocol ScreenCapturing: Sendable {
     /// Writes a full-resolution PNG of the main display to `path`.
     func screenshot(udid: String, to path: String) async throws
@@ -32,4 +50,59 @@ public protocol ScreenCapturing: Sendable {
 
 public protocol DisplayInfoProviding: Sendable {
     func displayInfo(udid: String) async throws -> DisplayInfo
+    func screenInfo(udid: String) async throws -> ScreenInfo
+}
+
+public protocol MediaImporting: Sendable {
+    func addMedia(udid: String, paths: [String]) async throws
+}
+
+public protocol OrientationControlling: Sendable {
+    func orientation(udid: String) async throws -> OrientationState
+    func setOrientation(udid: String, _ orientation: DeviceOrientation) async throws -> OrientationState
+}
+
+public protocol AppearanceConfiguring: Sendable {
+    func appearance(udid: String) async throws -> AppearanceSettings
+    /// Applies the non-nil fields and returns what the device reports back.
+    func setAppearance(udid: String, _ changes: AppearanceSettings) async throws -> AppearanceSettings
+}
+
+public protocol PermissionManaging: Sendable {
+    /// `bundleId` is required for grant and revoke.
+    func setPermission(udid: String, action: PermissionAction, service: PermissionService, bundleId: String?) async throws
+}
+
+public protocol LocationSimulating: Sendable {
+    func setLocation(udid: String, _ coordinate: Coordinate) async throws
+    func clearLocation(udid: String) async throws
+    /// Starts moving along the waypoints and returns; the movement goes on until `clearLocation`.
+    func simulateRoute(udid: String, waypoints: [Coordinate], speed: Double) async throws
+    func runLocationScenario(udid: String, name: String) async throws
+    func locationScenarios(udid: String) async throws -> [String]
+}
+
+public protocol StatusBarOverriding: Sendable {
+    /// Changes only the given indicators; earlier overrides stay.
+    func overrideStatusBar(udid: String, _ override: StatusBarOverride) async throws
+    func applyStatusBarPreset(udid: String, _ preset: StatusBarPreset) async throws
+    func clearStatusBar(udid: String) async throws
+    func statusBar(udid: String) async throws -> StatusBarOverride
+}
+
+public protocol BiometricsSimulating: Sendable {
+    func biometricEnrollment(udid: String) async throws -> [BiometricEnrollment]
+    func setBiometricEnrollment(udid: String, enrolled: Bool) async throws -> [BiometricEnrollment]
+    func simulateBiometricMatch(udid: String, success: Bool) async throws
+}
+
+public protocol PasteboardAccessing: Sendable {
+    func copyToPasteboard(udid: String, text: String) async throws
+    /// nil when the pasteboard holds no text.
+    func pasteboardText(udid: String) async throws -> String?
+}
+
+public protocol PushSending: Sendable {
+    /// `payloadPath`: a JSON file with an `aps` dictionary.
+    func sendPush(udid: String, bundleId: String, payloadPath: String) async throws
 }

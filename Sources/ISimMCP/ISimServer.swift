@@ -13,12 +13,14 @@ public enum ISimServer {
         Device selection: every device tool takes an optional `device` (UDID or name); without it the active device \
         (set_active_device) or the only booted simulator / connected iPhone is used.
         Typical flow: list_devices → boot_device (simulator) → install_app → launch_app → screenshot.
+        Preparing screenshots: configure_ui (appearance), override_status_bar (preset=screenshot), set_location, \
+        set_permission — these are in the `system` toolset.
         Coordinates for UI tools are in points; screenshot reports how image pixels map to points.
         If anything fails, call doctor.
         """
 
     public static func allTools() -> [ToolDefinition] {
-        CoreTools.all + DeviceTools.all + AppTools.all + ScreenTools.all
+        CoreTools.all + DeviceTools.all + AppTools.all + ScreenTools.all + UITools.all + SystemTools.all
     }
 
     public static func makeRegistry(toolsets: Set<Toolset>) -> ToolRegistry {

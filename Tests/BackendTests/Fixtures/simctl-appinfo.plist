@@ -1,0 +1,23 @@
+{
+    ApplicationType = User;
+    Bundle = "file:///Users/tester/Library/Developer/CoreSimulator/Devices/11111111-2222-3333-4444-555555555555/data/Containers/Bundle/Application/79F08BDB-1488-4804-8473-E8C5B68EE93A/Runner.app/";
+    BundleContainer = "file:///Users/tester/Library/Developer/CoreSimulator/Devices/11111111-2222-3333-4444-555555555555/data/Containers/Bundle/Application/79F08BDB-1488-4804-8473-E8C5B68EE93A/";
+    CFBundleDisplayName = "Demo (staging)";
+    CFBundleExecutable = Runner;
+    CFBundleIdentifier = "com.example.demo";
+    CFBundleName = Demo;
+    CFBundleShortVersionString = "1.0.32";
+    CFBundleVersion = 29;
+    DataContainer = "file:///Users/tester/Library/Developer/CoreSimulator/Devices/11111111-2222-3333-4444-555555555555/data/Containers/Data/Application/FC8D0540-8971-4B30-959E-7BF2E4E7C0A5/";
+    GroupContainers =     {
+        "group.com.example.demo" = "file:///Users/tester/Library/Developer/CoreSimulator/Devices/11111111-2222-3333-4444-555555555555/data/Containers/Shared/AppGroup/0F0F0F0F-1111-2222-3333-444444444444/";
+    };
+    IsAppClip = 0;
+    IsDeveloperApp = 1;
+    IsFirstParty = 0;
+    IsHidden = 0;
+    IsRemovable = 1;
+    Path = "/Users/tester/Library/Developer/CoreSimulator/Devices/11111111-2222-3333-4444-555555555555/data/Containers/Bundle/Application/79F08BDB-1488-4804-8473-E8C5B68EE93A/Runner.app";
+    SBAppTags =     (
+    );
+}

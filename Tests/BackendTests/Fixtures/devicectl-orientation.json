@@ -1,0 +1,13 @@
+{
+  "info": {
+    "commandType": "devicectl.device.orientation.get",
+    "jsonVersion": 5,
+    "outcome": "success"
+  },
+  "result": {
+    "deviceIdentifier": "00000000-0000-0000-0000-000000000001",
+    "deviceIsOrientationLocked": false,
+    "deviceOrientation": "faceUp",
+    "deviceOrientationNonFlat": "portrait"
+  }
+}

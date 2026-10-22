@@ -59,6 +59,40 @@ struct SimctlParserTests {
         #expect(settings.type == "system")
     }
 
+    @Test func parsesRuntimeDeviceTypes() throws {
+        let runtimes = try SimctlParser.runtimes(fromListJSON: try fixture("simctl-list-runtimes.json"))
+        let types = try #require(runtimes.first?.supportedDeviceTypes)
+        let iPhone = try #require(types.first { $0.name == "iPhone 16 Pro" })
+        #expect(iPhone.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro")
+        #expect(iPhone.productFamily == "iPhone")
+    }
+
+    @Test func parsesAppInfo() throws {
+        let (details, executable) = try SimctlParser.appInfo(fromPlist: try fixture("simctl-appinfo.plist"))
+        #expect(details.app.bundleId == "com.example.demo")
+        #expect(details.app.name == "Demo (staging)")
+        #expect(details.app.version == "1.0.32")
+        #expect(details.app.build == "29")
+        #expect(details.app.type == "user")
+        #expect(details.flags == ["developer build"])
+        #expect(details.dataContainer?.hasSuffix("/Data/Application/FC8D0540-8971-4B30-959E-7BF2E4E7C0A5") == true)
+        #expect(details.dataContainer?.hasPrefix("/Users/tester/") == true, "file URLs become paths")
+        #expect(details.appGroups.map(\.identifier) == ["group.com.example.demo"])
+        #expect(details.appGroups.first?.path?.hasSuffix("/AppGroup/0F0F0F0F-1111-2222-3333-444444444444") == true)
+        #expect(executable?.hasSuffix("/Runner.app/Runner") == true)
+    }
+
+    @Test func parsesLaunchctlListAppsFirst() throws {
+        let processes = SimctlParser.processes(fromLaunchctlList: try fixtureString("simctl-launchctl-list.txt"))
+        #expect(processes.map(\.pid) == [29091, 29312, 23825, 34847, 28877], "apps by name, then daemons; jobs without a pid are skipped")
+        let demo = try #require(processes.first { $0.pid == 34847 })
+        #expect(demo.bundleId == "com.example.demo")
+        #expect(demo.name == "com.example.demo")
+        let springBoard = try #require(processes.last)
+        #expect(springBoard.bundleId == nil)
+        #expect(springBoard.name == "com.apple.SpringBoard")
+    }
+
     @Test func parsesLaunchPID() {
         #expect(SimctlParser.pid(fromLaunchOutput: "com.apple.mobilesafari: 23860\n") == 23860)
         #expect(SimctlParser.pid(fromLaunchOutput: "") == nil)
@@ -125,6 +159,87 @@ struct SimctlBackendTests {
         await #expect(throws: ISimError.commandFailed(command: "simctl openurl", message: "Simulator device failed to open bad://url.")) {
             try await backend.openURL(udid: "SIM", url: "bad://url")
         }
+    }
+
+    @Test func rebootIsShutdownThenBoot() async throws {
+        runner.on("simctl shutdown")
+        runner.on("simctl boot")
+        try await backend.reboot(udid: "SIM", wait: true)
+        #expect(runner.calls.map(\.commandLine) == ["simctl shutdown SIM", "simctl boot SIM", "simctl bootstatus SIM"])
+    }
+
+    @Test func createReturnsTheNewUDID() async throws {
+        runner.on("simctl create", stdout: "35A20DE3-D32C-4D18-A80B-D5A3C18F847D\n")
+        let udid = try await backend.createDevice(name: "Test", deviceTypeId: "com.apple.CoreSimulator.SimDeviceType.iPhone-16e",
+                                                  runtimeId: "com.apple.CoreSimulator.SimRuntime.iOS-27-0")
+        #expect(udid == "35A20DE3-D32C-4D18-A80B-D5A3C18F847D")
+        #expect(runner.calls.first?.arguments == [
+            "simctl", "create", "Test", "com.apple.CoreSimulator.SimDeviceType.iPhone-16e", "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        ])
+    }
+
+    @Test func appInfoOfMissingAppSaysItIsNotInstalled() async throws {
+        runner.on("simctl appinfo", exitCode: 3, stderr: "No application record found for that bundle identifier\n")
+        let error = await #expect(throws: ISimError.self) { try await backend.appInfo(udid: "SIM", bundleId: "com.missing") }
+        #expect(error?.description.hasPrefix("com.missing is not installed") == true)
+    }
+
+    @Test func appInfoReadsEntitlementsOfUserApps() async throws {
+        runner.on("simctl appinfo", stdout: try fixtureString("simctl-appinfo.plist"))
+        // segedit writes the section to the file named in its last argument; the scripted runner writes nothing,
+        // so the backend falls back to codesign.
+        runner.on("segedit", exitCode: 1)
+        runner.on("--entitlements", stdout: """
+            <?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>\
+            <key>aps-environment</key><string>development</string></dict></plist>
+            """)
+        let details = try await backend.appInfo(udid: "SIM", bundleId: "com.example.demo")
+        #expect(details.entitlementsJSON == #"{"aps-environment":"development"}"#)
+        #expect(runner.calls.last?.arguments.last?.hasSuffix("/Runner.app/Runner") == true)
+    }
+
+    @Test func containerErrorsAreSpecific() async throws {
+        runner.on("get_app_container SIM com.missing", exitCode: 2, stderr: "No such file or directory\n")
+        runner.on("get_app_container SIM com.example.demo group.nope", exitCode: 117, stderr: "Usage: simctl get_app_container <device>\n")
+        runner.on("get_app_container SIM com.apple.Preferences data", stdout: "(null)\n")
+        runner.on("get_app_container SIM com.example.demo data", stdout: "/Users/tester/Data/Application/ABC\n")
+
+        #expect(try await backend.containerPath(udid: "SIM", bundleId: "com.example.demo", container: "data") == "/Users/tester/Data/Application/ABC")
+        await #expect(throws: ISimError.notFound("com.missing is not installed on the simulator. Use list_apps to see installed apps.")) {
+            try await backend.containerPath(udid: "SIM", bundleId: "com.missing", container: "app")
+        }
+        await #expect(throws: ISimError.notFound("com.apple.Preferences has no data container.")) {
+            try await backend.containerPath(udid: "SIM", bundleId: "com.apple.Preferences", container: "data")
+        }
+        let error = await #expect(throws: ISimError.self) {
+            try await backend.containerPath(udid: "SIM", bundleId: "com.example.demo", container: "group.nope")
+        }
+        #expect(error?.description.contains("Use container=groups") == true)
+    }
+
+    @Test func permissionChecksThatTheAppIsInstalled() async throws {
+        runner.on("get_app_container SIM com.typo", exitCode: 2)
+        await #expect(throws: ISimError.notFound("com.typo is not installed on the simulator. Use list_apps to see installed apps.")) {
+            try await backend.setPermission(udid: "SIM", action: .grant, service: .photos, bundleId: "com.typo")
+        }
+        #expect(!runner.calls.contains { $0.commandLine.contains("privacy") })
+    }
+
+    @Test func permissionResetWithoutBundleAppliesToAllApps() async throws {
+        runner.on("simctl privacy")
+        try await backend.setPermission(udid: "SIM", action: .reset, service: .locationAlways, bundleId: nil)
+        #expect(runner.calls.map(\.commandLine) == ["simctl privacy SIM reset location-always"])
+        await #expect(throws: ISimError.self) {
+            try await backend.setPermission(udid: "SIM", action: .revoke, service: .photos, bundleId: nil)
+        }
+    }
+
+    @Test func pushRefusedByIOSExplainsWhy() async throws {
+        runner.on("simctl push", exitCode: 211, stderr: "Repository could not save notification. Source is not authorized.\n")
+        let error = await #expect(throws: ISimError.self) {
+            try await backend.sendPush(udid: "SIM", bundleId: "com.example.demo", payloadPath: "/tmp/p.json")
+        }
+        #expect(error?.description.contains("allowed to show notifications") == true)
     }
 
     @Test func listAppsFiltersSystemApps() async throws {

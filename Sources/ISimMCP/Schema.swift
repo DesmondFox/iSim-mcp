@@ -38,6 +38,24 @@ enum Schema {
         return .object(schema)
     }
 
+    static func number(_ description: String, minimum: Double? = nil, maximum: Double? = nil) -> Value {
+        var schema: [String: Value] = ["type": "number", "description": .string(description)]
+        if let minimum { schema["minimum"] = .double(minimum) }
+        if let maximum { schema["maximum"] = .double(maximum) }
+        return .object(schema)
+    }
+
+    /// A boolean without a default: omitting it means "leave as is".
+    static func optionalBool(_ description: String) -> Value {
+        ["type": "boolean", "description": .string(description)]
+    }
+
+    static func array(of items: Value, _ description: String, minItems: Int? = nil) -> Value {
+        var schema: [String: Value] = ["type": "array", "items": items, "description": .string(description)]
+        if let minItems { schema["minItems"] = .int(minItems) }
+        return .object(schema)
+    }
+
     static func stringArray(_ description: String) -> Value {
         ["type": "array", "items": ["type": "string"], "description": .string(description)]
     }

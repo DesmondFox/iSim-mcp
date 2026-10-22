@@ -97,6 +97,69 @@ public enum SimctlParser {
         .sorted { ($0.type == "user" ? 0 : 1, $0.bundleId) < ($1.type == "user" ? 0 : 1, $1.bundleId) }
     }
 
+    /// `simctl appinfo` prints an OpenStep plist; returns the details and the path of the main executable.
+    public static func appInfo(fromPlist data: Data) throws -> (details: AppDetails, executable: String?) {
+        guard
+            let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+            let bundleId = info["CFBundleIdentifier"] as? String
+        else {
+            throw ISimError.commandFailed(command: "simctl appinfo", message: "unexpected output")
+        }
+        let path = info["Path"] as? String
+        let app = InstalledApp(
+            bundleId: bundleId,
+            name: (info["CFBundleDisplayName"] ?? info["CFBundleName"]) as? String,
+            version: info["CFBundleShortVersionString"] as? String,
+            build: info["CFBundleVersion"] as? String,
+            type: (info["ApplicationType"] as? String) == "User" ? "user" : "system",
+            path: path
+        )
+        let groups = (info["GroupContainers"] as? [String: String] ?? [:])
+            .map { AppGroupContainer(identifier: $0.key, path: filePath($0.value)) }
+            .sorted { $0.identifier < $1.identifier }
+        // OpenStep plists keep numbers as strings.
+        func flag(_ key: String) -> Bool { (info[key] as? String) == "1" || (info[key] as? Bool) == true }
+        var flags: [String] = []
+        if flag("IsDeveloperApp") { flags.append("developer build") }
+        if flag("IsAppClip") { flags.append("app clip") }
+        if flag("IsHidden") { flags.append("hidden") }
+        let details = AppDetails(
+            app: app,
+            dataContainer: (info["DataContainer"] as? String).map(filePath),
+            appGroups: groups,
+            entitlementsJSON: nil,
+            flags: flags
+        )
+        let executable = (info["CFBundleExecutable"] as? String).flatMap { name in path.map { "\($0)/\(name)" } }
+        return (details, executable)
+    }
+
+    /// "file:///Users/me/Library/…/Data/Application/ABC/" → "/Users/me/Library/…/Data/Application/ABC"
+    static func filePath(_ value: String) -> String {
+        guard value.hasPrefix("file://"), let url = URL(string: value) else { return value }
+        return url.path
+    }
+
+    /// `launchctl list` inside a simulator: "PID\tStatus\tLabel" rows; apps are `UIKitApplication:<bundle id>[…]`.
+    /// Jobs that are not running ("-" instead of a pid) are skipped. Apps come first.
+    public static func processes(fromLaunchctlList output: String) -> [RunningProcess] {
+        var seen = Set<Int>()
+        var processes: [RunningProcess] = []
+        for line in output.split(separator: "\n").dropFirst() {
+            let columns = line.split(separator: "\t", maxSplits: 2).map(String.init)
+            guard columns.count == 3, let pid = Int(columns[0]), seen.insert(pid).inserted else { continue }
+            let label = columns[2]
+            let prefix = "UIKitApplication:"
+            if label.hasPrefix(prefix) {
+                let bundleId = String(label.dropFirst(prefix.count).prefix { $0 != "[" })
+                processes.append(RunningProcess(pid: pid, name: bundleId, bundleId: bundleId, path: nil))
+            } else {
+                processes.append(RunningProcess(pid: pid, name: label, bundleId: nil, path: nil))
+            }
+        }
+        return processes.sorted { ($0.bundleId == nil ? 1 : 0, $0.name.lowercased()) < ($1.bundleId == nil ? 1 : 0, $1.name.lowercased()) }
+    }
+
     /// "com.apple.mobilesafari: 23860" → 23860
     public static func pid(fromLaunchOutput output: String) -> Int? {
         output.split(separator: "\n").last

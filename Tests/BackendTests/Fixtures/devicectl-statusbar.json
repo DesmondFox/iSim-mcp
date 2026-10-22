@@ -1,0 +1,19 @@
+{
+  "info": {
+    "commandType": "devicectl.device.simulate.statusBar.show",
+    "jsonVersion": 5,
+    "outcome": "success"
+  },
+  "result": {
+    "batteryFailingToCharge": false,
+    "batteryLevel": 42,
+    "batteryState": "charging",
+    "cellularMode": "active",
+    "cellularStrength": 2,
+    "dataNetworkType": "`5G`",
+    "deviceIdentifier": "11111111-2222-3333-4444-555555555555",
+    "time": "10:09",
+    "wifiMode": "active",
+    "wifiStrength": 1
+  }
+}

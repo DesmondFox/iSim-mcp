@@ -47,7 +47,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ISimMCPTests",
-            dependencies: ["ISimMCP", "DeviceCore", "ProcessKit", "TestSupport", .product(name: "MCP", package: "swift-sdk")]
+            dependencies: ["ISimMCP", "DeviceCore", "SimctlBackend", "ProcessKit", "TestSupport", .product(name: "MCP", package: "swift-sdk")]
         ),
     ]
 )

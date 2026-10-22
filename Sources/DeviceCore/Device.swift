@@ -35,6 +35,8 @@ public struct Device: Codable, Sendable, Hashable {
     public var developerMode: String?
     /// Physical only: "wired", "localNetwork".
     public var transport: String?
+    /// CoreDevice identifier, which DeviceHub URLs use. Equals the UDID for simulators.
+    public var coreDeviceId: String?
 
     public init(
         udid: String,
@@ -45,7 +47,8 @@ public struct Device: Codable, Sendable, Hashable {
         model: String? = nil,
         isAvailable: Bool = true,
         developerMode: String? = nil,
-        transport: String? = nil
+        transport: String? = nil,
+        coreDeviceId: String? = nil
     ) {
         self.udid = udid
         self.name = name
@@ -56,6 +59,12 @@ public struct Device: Codable, Sendable, Hashable {
         self.isAvailable = isAvailable
         self.developerMode = developerMode
         self.transport = transport
+        self.coreDeviceId = coreDeviceId
+    }
+
+    /// Opens Xcode's DeviceHub on this device.
+    public var deviceHubURL: String {
+        "devices://device/open?id=\(coreDeviceId ?? udid)"
     }
 
     /// `"iPhone 16 Pro" (8D408511-…, simulator, booted)` — used in messages.
@@ -79,6 +88,53 @@ public struct InstalledApp: Codable, Sendable, Hashable {
         self.version = version
         self.build = build
         self.type = type
+        self.path = path
+    }
+}
+
+/// What get_app_info shows about one app.
+public struct AppDetails: Sendable, Equatable {
+    public var app: InstalledApp
+    /// The app's data directory: a Mac path on simulators, a path on the device for iPhones.
+    public var dataContainer: String?
+    public var appGroups: [AppGroupContainer]
+    /// Entitlements as JSON; known for simulator builds only.
+    public var entitlementsJSON: String?
+    /// e.g. "developer", "removable", "app clip".
+    public var flags: [String]
+
+    public init(app: InstalledApp, dataContainer: String?, appGroups: [AppGroupContainer], entitlementsJSON: String?, flags: [String]) {
+        self.app = app
+        self.dataContainer = dataContainer
+        self.appGroups = appGroups
+        self.entitlementsJSON = entitlementsJSON
+        self.flags = flags
+    }
+}
+
+public struct AppGroupContainer: Sendable, Equatable {
+    public var identifier: String
+    public var path: String?
+
+    public init(identifier: String, path: String?) {
+        self.identifier = identifier
+        self.path = path
+    }
+}
+
+public struct RunningProcess: Sendable, Equatable {
+    public var pid: Int
+    /// Executable name, or the launchd label of a simulator daemon.
+    public var name: String
+    /// Set for app processes.
+    public var bundleId: String?
+    /// Executable path, where the backend reports it (physical devices).
+    public var path: String?
+
+    public init(pid: Int, name: String, bundleId: String?, path: String?) {
+        self.pid = pid
+        self.name = name
+        self.bundleId = bundleId
         self.path = path
     }
 }
@@ -107,15 +163,33 @@ public enum TerminateOutcome: Sendable, Equatable {
     case notRunning
 }
 
-/// Main display of a device. Coordinates of all UI tools are in points.
+/// A display of a device. Coordinates of all UI tools are in points.
 public struct DisplayInfo: Codable, Sendable, Equatable {
     public var widthPixels: Int
     public var heightPixels: Int
     public var scale: Double
+    /// e.g. "LCD".
+    public var name: String?
+    /// Pass to `screenshot(display:)` to capture this display.
+    public var uniqueId: String?
+    public var isPrimary: Bool
 
-    public init(widthPixels: Int, heightPixels: Int, scale: Double) {
+    public init(widthPixels: Int, heightPixels: Int, scale: Double, name: String? = nil, uniqueId: String? = nil, isPrimary: Bool = true) {
         self.widthPixels = widthPixels
         self.heightPixels = heightPixels
         self.scale = scale
+        self.name = name
+        self.uniqueId = uniqueId
+        self.isPrimary = isPrimary
+    }
+}
+
+public struct ScreenInfo: Sendable, Equatable {
+    public var displays: [DisplayInfo]
+    public var orientation: OrientationState?
+
+    public init(displays: [DisplayInfo], orientation: OrientationState?) {
+        self.displays = displays
+        self.orientation = orientation
     }
 }
