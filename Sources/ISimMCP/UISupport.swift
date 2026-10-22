@@ -66,6 +66,12 @@ enum UIQuery {
         case 1:
             return matches[0]
         default:
+            // A control and its own icon or text can come as separate elements with one frame (Flutter does this):
+            // the one that can be used is meant.
+            let interactive = matches.filter(\.isInteractive)
+            if interactive.count == 1, matches.allSatisfy({ $0.frame.isClose(to: interactive[0].frame) }) {
+                return interactive[0]
+            }
             let listed = matches.prefix(10).enumerated().map { "  \($0.offset): " + UIElementFormatter.line($0.element) }
             throw .invalidArgument("\(matches.count) elements match \(selector); add `index` or a narrower field:\n"
                 + listed.joined(separator: "\n") + (matches.count > 10 ? "\n  …" : ""))
@@ -96,6 +102,59 @@ enum UIQuery {
         let name = root.label.map { "\"\($0)\"" } ?? "SpringBoard: home screen or system UI"
         let size = "\(UIElementFormatter.number(root.frame.width))×\(UIElementFormatter.number(root.frame.height)) pt"
         return name + (root.pid.map { " (pid \($0))" } ?? "") + ", " + size
+    }
+}
+
+/// Text inputs of a screen: how type_text finds its field again and tells whether the text arrived.
+/// Fields are matched by frame, since Flutter drops a field's label (its hint) once it has a value.
+enum TextFields {
+    static let roles: Set<String> = ["text_field", "secure_text_field", "search_field", "text_view"]
+
+    /// The inputs in reading order.
+    static func all(in tree: UIElement) -> [UIElement] {
+        tree.flattened.dropFirst().filter { roles.contains($0.role) }
+    }
+
+    /// The smallest input under the point.
+    static func field(at point: CGPoint, in tree: UIElement) -> UIElement? {
+        all(in: tree).filter { $0.frame.contains(point) }.min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+    }
+
+    /// The field type_text works on: the input under the point it tapped, else the focused element, else the only input.
+    static func target(in tree: UIElement, tappedAt point: CGPoint?) -> UIElement? {
+        if let point, let field = field(at: point, in: tree) { return field }
+        if let focused = focused(in: tree) { return focused }
+        let inputs = all(in: tree)
+        return inputs.count == 1 ? inputs[0] : nil
+    }
+
+    /// The element with keyboard focus. Flutter fields never report it.
+    static func focused(in tree: UIElement) -> UIElement? {
+        tree.flattened.first { $0.isFocused && $0.role != UIRole.application }
+    }
+
+    /// The first input whose value is not what it was in `before`, or that was not there.
+    static func changed(from before: UIElement, to after: UIElement) -> UIElement? {
+        let old = all(in: before)
+        return all(in: after).first { field in
+            guard let previous = old.first(where: { $0.frame.isClose(to: field.frame) }) else { return true }
+            return previous.value != field.value
+        }
+    }
+
+    /// Delete arrived before select-all took effect, so one character went instead of all of them.
+    /// Flutter applies Cmd+A asynchronously.
+    static func clearMissed(before: String?, after: String?) -> Bool {
+        guard let before, let after, before.count > 1 else { return false }
+        return after.count == before.count - 1
+    }
+}
+
+extension CGRect {
+    /// The same frame within `tolerance` points: frames of one element differ by fractions between readings.
+    func isClose(to other: CGRect, tolerance: CGFloat = 1) -> Bool {
+        abs(minX - other.minX) <= tolerance && abs(minY - other.minY) <= tolerance
+            && abs(width - other.width) <= tolerance && abs(height - other.height) <= tolerance
     }
 }
 

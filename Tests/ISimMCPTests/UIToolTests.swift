@@ -6,22 +6,27 @@ import MCP
 import TestSupport
 import Testing
 
-/// SimBridge stand-in: serves screens in order, moving to the next after every tap, and records input.
+/// SimBridge stand-in: serves screens in order, moving to the next after every tap (and every key press with
+/// `advancingOnKeys`), and records input.
 final class FakeUI: InputInjecting, AccessibilityProviding, @unchecked Sendable {
     private let lock = NSLock()
     private var screens: [UIElement]
+    private let advancingOnKeys: Bool
     private(set) var taps: [CGPoint] = []
+    private(set) var holds: [Duration] = []
     private(set) var swipes: [(CGPoint, CGPoint)] = []
     private(set) var strokes: [KeyStroke] = []
     private(set) var buttons: [HardwareButton] = []
 
-    init(_ screens: UIElement...) {
+    init(_ screens: UIElement..., advancingOnKeys: Bool = false) {
         self.screens = screens
+        self.advancingOnKeys = advancingOnKeys
     }
 
     func tap(udid: String, at point: CGPoint, count: Int, hold: Duration) async throws {
         lock.withLock {
             taps.append(point)
+            holds.append(hold)
             if screens.count > 1 { screens.removeFirst() }
         }
     }
@@ -31,7 +36,10 @@ final class FakeUI: InputInjecting, AccessibilityProviding, @unchecked Sendable 
     }
 
     func pressKeys(udid: String, _ strokes: [KeyStroke]) async throws {
-        lock.withLock { self.strokes += strokes }
+        lock.withLock {
+            self.strokes += strokes
+            if advancingOnKeys && screens.count > 1 { screens.removeFirst() }
+        }
     }
 
     func pressButton(udid: String, _ button: HardwareButton, hold: Duration) async throws {
@@ -62,6 +70,20 @@ private let loginScreen = app("iSim Test",
     node("button", "Item 2", id: "item-2", CGRect(x: 16, y: 474, width: 370, height: 52)),
     node("switch", "Favorite", value: "0", id: "favorite", CGRect(x: 16, y: 220, width: 370, height: 52)),
     node("button", "Item 40", id: "item-40", CGRect(x: 16, y: 900, width: 370, height: 52)))
+
+/// A Flutter sign-up step: the field's label is its hint, gone once it has a value, and nothing reports focus.
+private let emailFrame = CGRect(x: 16, y: 226, width: 370, height: 56)
+
+private func flutterForm(email: String?, _ more: UIElement...) -> UIElement {
+    app("BZZR", [
+        node("text_field", email == nil ? "Email" : nil, value: email, emailFrame),
+        node("text_field", "Password", CGRect(x: 42, y: 312, width: 285, height: 28)),
+    ] + more)
+}
+
+private func app(_ label: String?, _ children: [UIElement]) -> UIElement {
+    UIElement(role: "application", label: label, frame: CGRect(x: 0, y: 0, width: 402, height: 874), pid: 42, children: children)
+}
 
 private let notificationAlert = app(nil, pid: 7,
     node("text", "“iSim Test” Would Like to Send You Notifications", CGRect(x: 71, y: 366, width: 260, height: 42)),
@@ -177,14 +199,71 @@ struct UIToolTests {
 
     @Test func pastesTextTheKeyboardCannotType() async throws {
         runner.on("device pasteboard copy", stdout: #"{"info":{"outcome":"success"},"result":{}}"#)
-        let ui = FakeUI(loginScreen)
+        let pasted = app("iSim Test", node("text_field", value: "Привет", id: "username", CGRect(x: 24, y: 412, width: 354, height: 34), focused: true))
+        let ui = FakeUI(loginScreen, pasted, advancingOnKeys: true)
         let result = try await call("type_text", ["text": "Привет", "submit": true], ui: ui)
         #expect(runner.calls.contains { $0.commandLine.contains("device pasteboard copy --device SIM-1") })
         #expect(ui.strokes == [KeyStroke(usage: 0x19, modifiers: [.command]), KeyStroke(usage: 0x28)])
-        #expect(text(result).hasPrefix("Typed 6 character(s) with paste and pressed Return"))
+        #expect(ui.taps.isEmpty)
+        #expect(text(result).hasPrefix("Typed 6 character(s) with paste and pressed Return (the text is left on the pasteboard).\nFocused:"))
 
         let refused = try await call("type_text", ["text": "Привет", "method": "hid"], ui: ui)
         #expect(text(refused) == "\"П\" has no key on a US keyboard; use method=paste (or auto).")
+    }
+
+    @Test func pastesFromTheEditMenuWhenCommandVChangesNothing() async throws {
+        runner.on("device pasteboard copy", stdout: #"{"info":{"outcome":"success"},"result":{}}"#)
+        let menu = flutterForm(email: nil,
+            node("text", "Paste", CGRect(x: 166, y: 283, width: 70, height: 44)),
+            node("text", "Select All", CGRect(x: 237, y: 283, width: 96, height: 44)))
+        // Field lookup, tap on the field, long press, tap on Paste. Cmd+V changes nothing, as in Flutter.
+        let ui = FakeUI(flutterForm(email: nil), flutterForm(email: nil), menu, flutterForm(email: "Привет"))
+        let result = try await call("type_text", ["text": "Привет", "element": ["label": "Email"]], ui: ui)
+        #expect(ui.strokes == [KeyStroke(usage: 0x19, modifiers: [.command])])
+        #expect(ui.taps == [CGPoint(x: 201, y: 254), CGPoint(x: 201, y: 254), CGPoint(x: 201, y: 305)])
+        #expect(ui.holds == [.milliseconds(60), .milliseconds(800), .milliseconds(60)])
+        #expect(text(result).contains("Cmd+V left the field unchanged, so pasted from the edit menu"))
+        #expect(text(result).hasSuffix("\nField: [text_field] value=\"Привет\" (16,226 370×56)"))
+    }
+
+    @Test func retriesAClearThatLostTheRaceWithSelectAll() async throws {
+        // Every tap and key press shows the next screen: the first Delete lands before select-all and takes one character.
+        let ui = FakeUI(
+            flutterForm(email: "abc"), flutterForm(email: "abc"),
+            flutterForm(email: "abc"), flutterForm(email: "ab"),
+            flutterForm(email: "ab"), flutterForm(email: nil),
+            flutterForm(email: "xy"),
+            advancingOnKeys: true)
+        let result = try await call("type_text", ["text": "xy", "element": ["role": "text_field", "index": 0], "clear": true], ui: ui)
+        let selectAll = KeyStroke(usage: 0x04, modifiers: [.command]), delete = KeyStroke(usage: 0x2A)
+        #expect(ui.strokes == [selectAll, delete, selectAll, delete, KeyStroke(usage: 0x1B), KeyStroke(usage: 0x1C)])
+        #expect(text(result).hasSuffix("\nField: [text_field] value=\"xy\" (16,226 370×56)"))
+    }
+
+    @Test func reportsTheFieldThatChangedWhenNothingHasFocus() async throws {
+        let ui = FakeUI(flutterForm(email: nil), flutterForm(email: nil), flutterForm(email: "ab"), advancingOnKeys: true)
+        let typed = try await call("type_text", ["text": "ab", "element": ["label": "Email"]], ui: ui)
+        #expect(text(typed).hasSuffix("\nField: [text_field] value=\"ab\" (16,226 370×56)"))
+
+        let lost = try await call("type_text", ["text": "ab"], ui: FakeUI(flutterForm(email: nil)))
+        #expect(text(lost).hasSuffix("\nNo field changed and none reports keyboard focus, so the text may have gone nowhere: "
+            + "pass `element` or tap a field first."))
+    }
+
+    @Test func picksTheOnlyInteractiveElementAmongMatchesWithOneFrame() async throws {
+        let email = CGRect(x: 16, y: 432, width: 370, height: 56)
+        let screen = app("BZZR", [
+            node("button", "Continue with Email", email),
+            node("image", "Continue with Email", email.offsetBy(dx: 0, dy: 0.4)),
+            node("text", "Sign in", CGRect(x: 101, y: 266, width: 200, height: 32)),
+            node("button", "Sign in", CGRect(x: 261, y: 768, width: 74, height: 32)),
+        ])
+        let ui = FakeUI(screen)
+        let tapped = try await call("tap", ["element": ["label": "Continue with Email"]], ui: ui)
+        #expect(text(tapped) == "Tapped [button] \"Continue with Email\" (16,432 370×56) at (201,460).")
+        // Different frames: the title and the button are different things.
+        let ambiguous = try await call("tap", ["element": ["label": "Sign in"]], ui: ui)
+        #expect(text(ambiguous).hasPrefix("2 elements match label \"Sign in\""))
     }
 
     @Test func swipesAcrossTheScreenInTheFingersDirection() async throws {
@@ -246,6 +325,30 @@ struct SystemAlertTests {
             node("button", "Autoriser", CGRect(x: 205, y: 494, width: 140, height: 48)))))
         #expect(unknown.button(accepting: true)?.label == "Autoriser")
         #expect(unknown.button(accepting: false)?.label == "Annuler")
+    }
+}
+
+struct TextFieldsTests {
+    @Test func findsAFieldByFrameAfterItsLabelIsGone() throws {
+        let field = try #require(TextFields.target(in: flutterForm(email: nil), tappedAt: CGPoint(x: 201, y: 254)))
+        #expect(field.label == "Email")
+        #expect(TextFields.field(at: field.center, in: flutterForm(email: "ab"))?.value == "ab")
+        #expect(TextFields.changed(from: flutterForm(email: nil), to: flutterForm(email: "ab"))?.value == "ab")
+        #expect(TextFields.changed(from: flutterForm(email: "ab"), to: flutterForm(email: "ab")) == nil)
+    }
+
+    @Test func withoutATapOrFocusOnlyALoneFieldIsTheTarget() {
+        #expect(TextFields.target(in: flutterForm(email: nil), tappedAt: nil) == nil)
+        #expect(TextFields.target(in: loginScreen, tappedAt: nil)?.identifier == "username")
+    }
+
+    @Test func aClearThatTookOneCharacterMissedTheSelection() {
+        #expect(TextFields.clearMissed(before: "abc", after: "ab"))
+        #expect(TextFields.clearMissed(before: "••••••••", after: "•••••••"))
+        #expect(!TextFields.clearMissed(before: "abc", after: nil))
+        // A native field shows its placeholder as the value once it is empty.
+        #expect(!TextFields.clearMissed(before: "isim.test@example.com", after: "Username"))
+        #expect(!TextFields.clearMissed(before: "a", after: ""))
     }
 }
 

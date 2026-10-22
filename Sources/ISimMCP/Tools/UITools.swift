@@ -245,7 +245,8 @@ enum UITools {
         description: """
             Type text into the focused field, or into `element` after tapping it. hid presses keys of a US keyboard \
             (Latin letters, digits, punctuation); paste puts the text on the pasteboard and presses Cmd+V, for any \
-            language and emoji; auto picks hid when it can. clear=true selects all and deletes first; submit=true presses Return.
+            language and emoji, and pastes from the edit menu (long press, Paste) when Cmd+V leaves the field unchanged, \
+            as in Flutter apps; auto picks hid when it can. clear=true selects all and deletes first; submit=true presses Return.
             """,
         inputSchema: Schema.deviceObject([
             "text": Schema.string("Text to type."),
@@ -274,15 +275,30 @@ enum UITools {
         }
 
         var notes: [String] = []
+        var tapped: CGPoint?
         if try arguments.selector("element") != nil {
             let target = try await target(arguments, device: device, context: context, capability: .typeText)
             try await input.tap(udid: device.udid, at: target.point, count: 1, hold: .milliseconds(60))
             // The field takes focus and the keyboard attaches.
             try await Task.sleep(for: .milliseconds(400))
             notes.append("tapped " + target.description)
+            tapped = target.point
         }
+        // The screen before typing: what the fields held, to tell whether the text arrived.
+        var before = await readScreen(device, context)
         if clear {
-            try await input.pressKeys(udid: device.udid, [KeyStroke(usage: 0x04, modifiers: [.command]), KeyStroke(usage: 0x2A)])
+            let field = before.flatMap { TextFields.target(in: $0, tappedAt: tapped) }
+            // The deletion shows a moment later; an empty field has nothing to wait for.
+            let wait = field?.value?.isEmpty == false ? arrivalTimeout : .zero
+            try await selectAllAndDelete(udid: device.udid, input: input, pause: clearPause)
+            if let screen = before {
+                before = try await waitForArrival(from: screen, device: device, context: context, wait: wait).screen
+            }
+            if let field, let screen = before,
+               TextFields.clearMissed(before: field.value, after: TextFields.field(at: field.center, in: screen)?.value) {
+                try await selectAllAndDelete(udid: device.udid, input: input, pause: clearPause * 3)
+                before = try await waitForArrival(from: screen, device: device, context: context, wait: wait).screen
+            }
         }
         if method == .paste {
             try await context.router.backend(.pasteboard, for: device, as: (any PasteboardAccessing).self)
@@ -292,19 +308,103 @@ enum UITools {
         } else {
             try await input.pressKeys(udid: device.udid, strokes)
         }
+
+        // Where the text went, read before Return can leave the screen, once the app has taken all of it in.
+        var arrival = Arrival()
+        var menuTried = false
+        if let before {
+            arrival = try await waitForArrival(from: before, device: device, context: context, wait: arrivalTimeout)
+            if method == .paste, arrival.field == nil, let field = TextFields.target(in: before, tappedAt: tapped) {
+                menuTried = true
+                if try await pasteFromMenu(into: field, before: before, device: device, input: input, context: context) {
+                    arrival = try await waitForArrival(from: before, device: device, context: context, wait: arrivalTimeout)
+                    if arrival.field != nil { notes.append("Cmd+V left the field unchanged, so pasted from the edit menu") }
+                }
+            }
+        }
         if submit { try await input.pressKeys(udid: device.udid, [KeyStroke(usage: 0x28)]) }
 
         var result = "Typed \(text.count) character(s) with \(method == .hid ? "the keyboard" : "paste")"
             + (submit ? " and pressed Return" : "") + (notes.isEmpty ? "." : " (" + notes.joined(separator: "; ") + ").")
         // What the field shows now, so a dropped or autocorrected character is visible.
-        if !submit, let tree = try? await context.screen(device, for: .typeText, patience: .zero) {
-            if let focused = tree.flattened.first(where: { $0.isFocused && $0.role != UIRole.application }) {
+        if let screen = arrival.screen {
+            if let focused = TextFields.focused(in: screen) {
                 result += "\nFocused: " + UIElementFormatter.line(focused)
+            } else if let field = arrival.field {
+                result += "\nField: " + UIElementFormatter.line(field)
+            } else if method == .paste {
+                result += menuTried
+                    ? "\nNeither Cmd+V nor the edit menu's Paste changed a field, so the text may have gone nowhere."
+                    : "\nCmd+V changed no field: pass `element` so type_text can paste from the edit menu instead."
             } else {
-                result += "\nNo element reports keyboard focus, so the text may have gone nowhere: pass `element` or tap a field first."
+                result += "\nNo field changed and none reports keyboard focus, so the text may have gone nowhere: "
+                    + "pass `element` or tap a field first."
             }
         }
         return .text(result)
+    }
+
+    /// How long select-all may take to apply before Delete: Flutter applies it asynchronously.
+    static let clearPause = Duration.milliseconds(250)
+    /// How long typed, pasted or deleted text may take to show in the field. Flutter shows it a few frames later.
+    static let arrivalTimeout = Duration.seconds(1)
+
+    /// The screen after typing, and the input whose value changed if one did.
+    struct Arrival {
+        var screen: UIElement?
+        var field: UIElement?
+    }
+
+    /// The screen, or nil when it cannot be read: the checks around typing never fail the typing itself.
+    static func readScreen(_ device: Device, _ context: ToolContext) async -> UIElement? {
+        try? await context.screen(device, for: .typeText, patience: .zero)
+    }
+
+    /// Reads the screen until an input differs from `before` and reads the same twice in a row, for up to `wait`:
+    /// Flutter shows typed keys a few at a time.
+    static func waitForArrival(from before: UIElement, device: Device, context: ToolContext, wait: Duration) async throws -> Arrival {
+        let clock = ContinuousClock()
+        let deadline = clock.now + wait
+        var arrival = Arrival()
+        while true {
+            if let screen = await readScreen(device, context) {
+                let previous = arrival.field
+                arrival = Arrival(screen: screen, field: TextFields.changed(from: before, to: screen))
+                if let field = arrival.field, let previous, previous.frame.isClose(to: field.frame), previous.value == field.value {
+                    return arrival
+                }
+            }
+            if clock.now >= deadline { return arrival }
+            try await Task.sleep(for: .milliseconds(150))
+        }
+    }
+
+    static func selectAllAndDelete(udid: String, input: any InputInjecting, pause: Duration) async throws {
+        try await input.pressKeys(udid: udid, [KeyStroke(usage: 0x04, modifiers: [.command])])
+        try await Task.sleep(for: pause)
+        try await input.pressKeys(udid: udid, [KeyStroke(usage: 0x2A)])
+    }
+
+    /// Long-presses the field and taps Paste in the edit menu that comes up. For apps that handle Cmd+V by reading
+    /// the pasteboard themselves, which iOS refuses without asking (Flutter); the menu's Paste is UIKit's own and
+    /// needs no permission. The text goes where the long press puts the cursor. False when no Paste item came up.
+    static func pasteFromMenu(
+        into field: UIElement, before: UIElement, device: Device, input: any InputInjecting, context: ToolContext
+    ) async throws -> Bool {
+        try await input.tap(udid: device.udid, at: field.center, count: 1, hold: .milliseconds(800))
+        let paste = ElementSelector(label: "Paste")
+        let existing = before.descendants(matching: paste)
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(2)
+        while true {
+            let items = await readScreen(device, context)?.descendants(matching: paste) ?? []
+            if let item = items.first(where: { item in !existing.contains { $0.frame.isClose(to: item.frame) } }) {
+                try await input.tap(udid: device.udid, at: item.center, count: 1, hold: .milliseconds(60))
+                return true
+            }
+            if clock.now >= deadline { return false }
+            try await Task.sleep(for: pollInterval)
+        }
     }
 
     static let pressKey = ToolDefinition(
