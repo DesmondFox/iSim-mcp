@@ -86,6 +86,8 @@ public enum BackendID: String, Sendable, CaseIterable {
     case devicectl
     /// Private CoreSimulator APIs: HID input through dtuhidd, accessibility through AXPTranslator.
     case simbridge
+    /// The XCUITest agent running on the device (ISimAgent).
+    case agent
 }
 
 /// Which backend serves which capability on which kind of device (PLAN.md, section 5).
@@ -153,8 +155,11 @@ public struct CapabilityMatrix: Sendable {
         .systemAlert: uiEntry,
     ])
 
-    /// Input and UI inspection on iPhones need the on-device XCUITest agent (PLAN.md, phase 4).
-    private static let uiEntry = Entry(
-        simulator: .simbridge, physical: nil,
-        hint: "Input and UI inspection on iPhones need an on-device UI agent, which iSim-mcp does not have yet. Use screenshot to look at the screen.")
+    /// Input and UI inspection: SimBridge on simulators, the on-device XCUITest agent on iPhones.
+    private static let uiEntry = Entry(simulator: .simbridge, physical: .agent)
+
+    /// What the agent serves; on a simulator it takes these over from SimBridge once started there (ui_agent).
+    public static let agentCapabilities: Set<Capability> = [
+        .tap, .swipe, .typeText, .pressKey, .pressButton, .describeUI, .describePoint, .findElements, .waitFor, .systemAlert,
+    ]
 }

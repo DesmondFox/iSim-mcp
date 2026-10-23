@@ -143,3 +143,51 @@ struct HIDKeyboardTests {
         #expect(HIDKeyboard.usage(forKey: "nope") == nil)
     }
 }
+
+struct AgentTreeFormattingTests {
+    private let screen = CGRect(x: 0, y: 0, width: 428, height: 926)
+
+    @Test func xcuiTestKeyboardIncludesItsSuggestionBar() throws {
+        let root = UIElement(role: "application", label: "iSim Test", frame: screen, children: [
+            element("text_field", value: "isim", id: "username", 24, 274, 380, 34),
+            element("element", id: "inputView", 0, 579, 428, 347),
+            element("button", "Passwords", 30, 579, 368, 44),
+            UIElement(role: "keyboard", frame: CGRect(x: 0, y: 623, width: 428, height: 245), children: [element("key", "q", 4, 630, 39, 42)]),
+        ])
+        #expect(root.keyboardFrame == CGRect(x: 0, y: 579, width: 428, height: 347))
+        #expect(UIElementFormatter.compact(root, interactiveOnly: false, screen: screen).lines == [
+            "[text_field] value=\"isim\" id=username (24,274 380×34)",
+            "[keyboard] software keyboard (0,579 428×347): type with type_text, keys with press_key",
+        ])
+    }
+
+    @Test func aKeyboardBelowTheScreenIsNotShown() {
+        let root = UIElement(role: "application", label: "Settings", frame: screen, children: [
+            UIElement(role: "keyboard", frame: CGRect(x: 0, y: 970, width: 428, height: 245)),
+        ])
+        #expect(root.keyboardFrame == nil)
+    }
+
+    @Test func bareCellsAreLeftOut() {
+        let root = UIElement(role: "application", label: "Settings", frame: screen, children: [
+            element("cell", nil, 20, 153, 388, 90),
+            element("button", "General", id: "com.apple.settings.general", 20, 153, 388, 90),
+            element("cell", "Labelled", 20, 243, 388, 52),
+        ])
+        #expect(UIElementFormatter.compact(root, interactiveOnly: false, screen: screen).lines == [
+            "[button] \"General\" id=com.apple.settings.general (20,153 388×90)",
+            "[cell] \"Labelled\" (20,243 388×52)",
+        ])
+    }
+}
+
+struct HiddenElementTests {
+    @Test func selectorsSkipElementsWithoutASize() {
+        // A Flutter tab bar, and the label of a screen it has left, kept with an empty frame.
+        let root = UIElement(role: "application", label: "BZZR", frame: CGRect(x: 0, y: 0, width: 428, height: 926), children: [
+            element("text", "Podcasts", 0, 0, 0, 0),
+            element("button", "Podcasts", 279, 846, 65, 54),
+        ])
+        #expect(root.descendants(matching: ElementSelector(label: "Podcasts")).map(\.role) == ["button"])
+    }
+}

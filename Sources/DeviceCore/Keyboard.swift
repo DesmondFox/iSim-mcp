@@ -95,6 +95,34 @@ public enum HIDKeyboard {
         return nil
     }
 
+    /// What a stroke presses, by key name (`return`, `left`) or by the character it types, with the modifiers
+    /// held. Shift goes into the character (`!`, not shift+1). The agent takes keys this way, not as HID usages.
+    public static func key(for stroke: KeyStroke) -> (key: String, modifiers: [KeyModifier])? {
+        if let name = keyNames[stroke.usage] { return (name, stroke.modifiers) }
+        let shift = stroke.modifiers.contains(.shift)
+        guard let character = character(forUsage: stroke.usage, shifted: shift) else { return nil }
+        return (String(character), stroke.modifiers.filter { $0 != .shift })
+    }
+
+    /// Canonical names by usage, without the aliases (`enter`, `backspace`).
+    private static let keyNames: [UInt32: String] = Dictionary(
+        namedKeys.filter { $0.key != "enter" && $0.key != "backspace" }.map { ($0.value, $0.key) },
+        uniquingKeysWith: { first, _ in first })
+
+    private static func character(forUsage usage: UInt32, shifted: Bool) -> Character? {
+        switch usage {
+        case 0x04...0x1D:
+            let scalar = Unicode.Scalar((shifted ? 0x41 : 0x61) + usage - 0x04)!
+            return Character(scalar)
+        case 0x1E...0x27:
+            if let match = Self.shifted.first(where: { $0.value == usage }), shifted { return match.key }
+            return Character(Unicode.Scalar(usage == 0x27 ? 0x30 : 0x31 + usage - 0x1E)!)
+        default:
+            let table = shifted ? Self.shifted : unshifted
+            return table.first { $0.value == usage && $0.key != "\n" && $0.key != "\t" }?.key
+        }
+    }
+
     public struct UntypableCharacter: Error, Equatable {
         public var character: Character
     }

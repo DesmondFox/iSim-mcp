@@ -17,6 +17,9 @@ struct ISimCommand: AsyncParsableCommand {
     @Option(help: "Log level for stderr: trace, debug, info, notice, warning, error, critical.")
     var logLevel: Logger.Level = .info
 
+    @Option(help: "Apple development team ID that signs the UI agent for iPhones (default: ISIM_TEAM_ID, the team used last, or the only team in Xcode).")
+    var teamId: String?
+
     @Flag(help: "Print the enabled tools and exit.")
     var listTools = false
 
@@ -42,7 +45,8 @@ struct ISimCommand: AsyncParsableCommand {
             handler.logLevel = level
             return handler
         }
-        try await ISimServer.run(toolsets: enabled, logger: Logger(label: "isim-mcp"))
+        let team = teamId ?? ProcessInfo.processInfo.environment["ISIM_TEAM_ID"]
+        try await ISimServer.run(toolsets: enabled, teamID: team, logger: Logger(label: "isim-mcp"))
     }
 }
 

@@ -129,6 +129,65 @@ public struct ProcessRunner: ProcessRunning {
     }
 }
 
+/// A child that runs until told to stop, its output appended to a log file: the UI agent's
+/// `xcodebuild test-without-building`.
+public protocol BackgroundProcess: AnyObject, Sendable {
+    var pid: Int32 { get }
+    var isRunning: Bool { get }
+    /// The exit status, once the child has exited.
+    func waitForExit() async -> Int32
+    /// SIGTERM to the child's process group, SIGKILL after a grace period.
+    func terminate()
+}
+
+public protocol BackgroundLaunching: Sendable {
+    func launch(_ executable: String, _ arguments: [String], environment: [String: String], log: URL) throws -> any BackgroundProcess
+}
+
+extension ProcessRunner: BackgroundLaunching {
+    public func launch(_ executable: String, _ arguments: [String], environment: [String: String], log: URL) throws -> any BackgroundProcess {
+        let commandLine = ([executable] + arguments).joined(separator: " ")
+        FileManager.default.createFile(atPath: log.path, contents: Data("$ \(commandLine)\n".utf8))
+        let output = try FileHandle(forWritingTo: log)
+        output.seekToEndOfFile()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.environment = ProcessInfo.processInfo.environment
+            .merging(baseEnvironment) { $1 }
+            .merging(environment) { $1 }
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
+        let child = ChildProcess(process, killGracePeriod: killGracePeriod)
+        do {
+            try process.run()
+        } catch {
+            try? output.close()
+            throw ProcessError.launchFailed(command: commandLine, reason: error.localizedDescription)
+        }
+        try? output.close()
+        return LoggedProcess(process: process, child: child)
+    }
+}
+
+private final class LoggedProcess: BackgroundProcess, @unchecked Sendable {
+    private let process: Process
+    private let child: ChildProcess
+
+    init(process: Process, child: ChildProcess) {
+        self.process = process
+        self.child = child
+    }
+
+    var pid: Int32 { process.processIdentifier }
+    var isRunning: Bool { process.isRunning }
+
+    func waitForExit() async -> Int32 { await child.waitForExit() }
+
+    func terminate() { child.terminate(timedOut: false) }
+}
+
 extension Duration {
     public var inSeconds: Double {
         Double(components.seconds) + Double(components.attoseconds) / 1e18

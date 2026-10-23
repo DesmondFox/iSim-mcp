@@ -4,7 +4,7 @@ import Foundation
 import MCP
 import SimBridgeBackend
 
-/// Input and UI inspection. Simulators go through SimBridge; iPhones will need the on-device agent (phase 4).
+/// Input and UI inspection. Simulators go through SimBridge, iPhones through the on-device UI agent.
 enum UITools {
     static let all: [ToolDefinition] = [
         describeUI, findElements, describePoint, tap, swipe, typeText, pressKey, pressButton, waitFor, handleSystemAlert, setOrientation,
@@ -244,9 +244,10 @@ enum UITools {
         toolset: .ui,
         description: """
             Type text into the focused field, or into `element` after tapping it. hid presses keys of a US keyboard \
-            (Latin letters, digits, punctuation); paste puts the text on the pasteboard and presses Cmd+V, for any \
-            language and emoji, and pastes from the edit menu (long press, Paste) when Cmd+V leaves the field unchanged, \
-            as in Flutter apps; auto picks hid when it can. clear=true selects all and deletes first; submit=true presses Return.
+            (Latin letters, digits, punctuation) on a simulator, while an iPhone's UI agent types any language this way; \
+            paste puts the text on the pasteboard and presses Cmd+V, and pastes from the edit menu (long press, Paste) \
+            when Cmd+V leaves the field unchanged, as in Flutter apps; auto picks hid when it can. \
+            clear=true selects all and deletes first; submit=true presses Return.
             """,
         inputSchema: Schema.deviceObject([
             "text": Schema.string("Text to type."),
@@ -264,10 +265,13 @@ enum UITools {
         let submit = try arguments.bool("submit", default: false)
         let device = try await context.session.resolveReady(try arguments.device)
         let input = try context.router.backend(.typeText, for: device, as: (any InputInjecting).self)
+        // The UI agent types any script itself.
+        let typist = input as? any TextTyping
 
         var strokes: [KeyStroke] = []
         switch (method, HIDKeyboard.strokes(for: text)) {
         case (.paste, _): break
+        case (_, _) where typist != nil: method = .hid
         case (_, .success(let typed)): strokes = typed; method = .hid
         case (.auto, .failure): method = .paste
         case (.hid, .failure(let failure)):
@@ -305,6 +309,8 @@ enum UITools {
                 .copyToPasteboard(udid: device.udid, text: text)
             try await input.pressKeys(udid: device.udid, [KeyStroke(usage: 0x19, modifiers: [.command])])
             notes.append("the text is left on the pasteboard")
+        } else if let typist {
+            try await typist.typeText(udid: device.udid, text)
         } else {
             try await input.pressKeys(udid: device.udid, strokes)
         }
@@ -314,6 +320,11 @@ enum UITools {
         var menuTried = false
         if let before {
             arrival = try await waitForArrival(from: before, device: device, context: context, wait: arrivalTimeout)
+            if method == .paste, arrival.field == nil, let screen = arrival.screen, let alert = SystemAlert.find(in: screen) {
+                // iOS asks before an app reads the pasteboard itself (Flutter on iPhones); allowing it pastes.
+                return .text("Pressed Cmd+V, and a system alert asks first: " + alert.summary
+                    + "\nAnswer it with handle_system_alert (accept lets the paste through).")
+            }
             if method == .paste, arrival.field == nil, let field = TextFields.target(in: before, tappedAt: tapped) {
                 menuTried = true
                 if try await pasteFromMenu(into: field, before: before, device: device, input: input, context: context) {
@@ -573,7 +584,8 @@ enum UITools {
             Read or answer a system alert, such as a permission prompt (notifications, location, photos, tracking). \
             accept taps the allowing button ("Allow While Using App", "Allow", "OK"), deny the refusing one ("Don't Allow"), \
             tap the button named by button_label. Waits up to timeout_ms for an alert to appear. \
-            For alerts inside the app, use tap with the button's label.
+            On iPhones it also answers alerts and sheets inside apps (e.g. "Save Password?"); on simulators, \
+            use tap with the button's label for those.
             """,
         inputSchema: Schema.deviceObject([
             "action": Schema.string("What to do.", enum: AlertAction.allCases.map(\.rawValue)),
