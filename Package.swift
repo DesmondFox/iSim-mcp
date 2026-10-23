@@ -28,6 +28,7 @@ let package = Package(
                 "SimctlBackend",
                 "DevicectlBackend",
                 "SimBridgeBackend",
+                "AgentBackend",
                 "ProcessKit",
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "Logging", package: "swift-log"),
@@ -37,6 +38,8 @@ let package = Package(
         .target(name: "SimctlBackend", dependencies: ["DeviceCore", "ProcessKit"]),
         .target(name: "DevicectlBackend", dependencies: ["DeviceCore", "ProcessKit"]),
         .target(name: "SimBridgeBackend", dependencies: ["DeviceCore", "SimBridge"]),
+        // HTTP over usbmuxd to the XCUITest agent in Agent/, which it builds and runs with xcodebuild.
+        .target(name: "AgentBackend", dependencies: ["DeviceCore", "ProcessKit"]),
         // Objective-C: private CoreSimulator and accessibility APIs, resolved at runtime.
         .target(name: "SimBridge", linkerSettings: [.linkedFramework("AppKit")]),
         .target(name: "ProcessKit"),
@@ -46,12 +49,14 @@ let package = Package(
         .testTarget(name: "DeviceCoreTests", dependencies: ["DeviceCore", "TestSupport"]),
         .testTarget(
             name: "BackendTests",
-            dependencies: ["SimctlBackend", "DevicectlBackend", "SimBridgeBackend", "DeviceCore", "ProcessKit", "TestSupport"],
+            dependencies: ["SimctlBackend", "DevicectlBackend", "SimBridgeBackend", "AgentBackend", "DeviceCore", "ProcessKit", "TestSupport"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "ISimMCPTests",
-            dependencies: ["ISimMCP", "DeviceCore", "SimctlBackend", "ProcessKit", "TestSupport", .product(name: "MCP", package: "swift-sdk")]
+            dependencies: [
+                "ISimMCP", "DeviceCore", "SimctlBackend", "AgentBackend", "ProcessKit", "TestSupport", .product(name: "MCP", package: "swift-sdk"),
+            ]
         ),
     ]
 )

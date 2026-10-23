@@ -59,14 +59,22 @@ public struct UIElement: Sendable, Equatable {
         return result
     }
 
-    /// Descendants that match, in reading order.
+    /// Descendants that match, in reading order. Elements without a size are left out, as in describe_ui:
+    /// Flutter keeps the widgets of hidden tabs and of screens it has left in the tree with empty frames.
     public func descendants(matching selector: ElementSelector) -> [UIElement] {
-        flattened.dropFirst().filter(selector.matches)
+        flattened.dropFirst().filter { ($0.frame.width > 0 || $0.frame.height > 0) && selector.matches($0) }
     }
 
     /// Where the software keyboard is, when it is up: from its top row of keys to the bottom of the screen.
     /// Found by the identifiers of its special keys; the letter rows above them are added while they adjoin.
     public var keyboardFrame: CGRect? {
+        // XCUITest names the keyboard. It stays in the tree below the screen while a hardware keyboard types.
+        // Its input view adds the suggestion bar above the keys.
+        if let keyboard = flattened.first(where: { $0.role == "keyboard" }) {
+            guard keyboard.frame.height > 0, frame.isEmpty || keyboard.frame.minY < frame.maxY - 1 else { return nil }
+            let input = flattened.first { $0.identifier == "inputView" && $0.frame.insetBy(dx: -1, dy: -1).contains(keyboard.frame) }
+            return input.map { $0.frame.union(keyboard.frame) } ?? keyboard.frame
+        }
         let buttons = flattened.filter { $0.role == "button" && $0.frame.height > 0 }
         let special = buttons.filter { Self.keyboardKeyIdentifiers.contains($0.identifier ?? "") }
         guard special.count >= 3, var top = special.map(\.frame.minY).min() else { return nil }
@@ -225,7 +233,9 @@ public enum UIElementFormatter {
         var offscreen = 0
         let keyboard = root.keyboardFrame
         for element in root.flattened.dropFirst() {
-            let meaningful = element.isInteractive || element.label != nil || element.value != nil || element.identifier != nil
+            // A bare cell (XCUITest lists one around every table row) repeats the row's button or text.
+            let usable = element.isInteractive && element.role != "cell"
+            let meaningful = usable || element.label != nil || element.value != nil || element.identifier != nil
             guard meaningful, !interactiveOnly || element.isInteractive else { continue }
             guard element.frame.width > 0 || element.frame.height > 0 else { continue }
             guard screen.isEmpty || element.frame.intersects(screen) else {

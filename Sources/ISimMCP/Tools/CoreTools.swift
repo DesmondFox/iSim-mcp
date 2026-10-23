@@ -90,6 +90,7 @@ enum CoreTools {
             } else {
                 report.warn("\(label): " + problems.joined(separator: "; "))
             }
+            await checkAgent(on: device, context: context, report: &report)
         }
 
         if let identities = try? await context.runner.run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], timeout: .seconds(10)) {
@@ -128,6 +129,25 @@ enum CoreTools {
         if let enabled = try? await context.simctl.isApplicationAccessibilityEnabled(udid: simulator.udid), !enabled {
             report.info("\(simulator.name): apps do not load accessibility yet; the first UI tool or launch_app turns it on, "
                 + "apps started before need a relaunch")
+        }
+    }
+
+    /// UI tools on an iPhone: the agent runs, or it can be built (its project is there, a team can sign it).
+    private static func checkAgent(on device: Device, context: ToolContext, report: inout DoctorReport) async {
+        if let running = await context.agent.running(device.udid) {
+            report.ok("\(device.name): UI agent running" + (running.team.map { ", signed by team \($0)" } ?? ""))
+            return
+        }
+        guard await context.agent.sourceDirectory != nil else {
+            report.warn("\(device.name): UI tools will not work: the UI agent's Xcode project was not found (set ISIM_AGENT_SOURCE or reinstall)")
+            return
+        }
+        do {
+            let team = try await context.agent.resolveTeam(nil)
+            report.info("\(device.name): UI agent not running; the first UI tool builds and starts it, signed by team \(team). "
+                + "The iPhone needs Settings → Developer → Enable UI Automation and must trust the developer certificate")
+        } catch {
+            report.warn("\(device.name): UI tools: \(error)")
         }
     }
 

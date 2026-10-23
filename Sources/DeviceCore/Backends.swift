@@ -118,6 +118,12 @@ public protocol InputInjecting: Sendable {
     func pressButton(udid: String, _ button: HardwareButton, hold: Duration) async throws
 }
 
+/// Typing text in any script into the focused element. The on-device agent can; a simulator's HID keyboard
+/// has only US keys, so type_text pastes other text there.
+public protocol TextTyping: Sendable {
+    func typeText(udid: String, _ text: String) async throws
+}
+
 public protocol AccessibilityProviding: Sendable {
     /// The frontmost application with its descendants; `maxDepth` nil reads every level.
     func uiTree(udid: String, maxDepth: Int?) async throws -> UIElement

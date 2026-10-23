@@ -103,7 +103,7 @@ struct ToolRegistryTests {
     @Test func defaultToolsetsExposeCoreDevicesAppsScreenAndUI() {
         let names = Set(ISimServer.makeRegistry(toolsets: Toolset.defaults).tools.map(\.name))
         #expect(names == [
-            "doctor", "set_active_device",
+            "doctor", "set_active_device", "ui_agent",
             "list_devices", "boot_device", "shutdown_device", "reboot_device", "open_simulator_app", "list_runtimes",
             "create_device", "erase_device", "delete_device",
             "list_apps", "get_app_info", "install_app", "uninstall_app", "launch_app", "terminate_app", "open_url",
@@ -116,7 +116,7 @@ struct ToolRegistryTests {
 
     @Test func systemToolsetHoldsTheEnvironmentTools() {
         let registry = ISimServer.makeRegistry(toolsets: [.system])
-        #expect(Set(registry.tools.map(\.name)).subtracting(["doctor", "set_active_device"]) == [
+        #expect(Set(registry.tools.map(\.name)).subtracting(["doctor", "set_active_device", "ui_agent"]) == [
             "configure_ui", "set_permission", "set_location", "simulate_route", "override_status_bar", "biometrics",
             "set_pasteboard", "get_pasteboard", "send_push",
         ])

@@ -66,11 +66,14 @@ enum UIQuery {
         case 1:
             return matches[0]
         default:
-            // A control and its own icon or text can come as separate elements with one frame (Flutter does this):
-            // the one that can be used is meant.
+            // A control and its own icon or text can come as separate elements, with one frame (Flutter) or inside
+            // the control (a table row's label under XCUITest): the one that can be used is meant.
             let interactive = matches.filter(\.isInteractive)
-            if interactive.count == 1, matches.allSatisfy({ $0.frame.isClose(to: interactive[0].frame) }) {
-                return interactive[0]
+            if interactive.count == 1 {
+                let control = interactive[0].frame
+                if matches.allSatisfy({ $0.frame.isClose(to: control) || control.insetBy(dx: -1, dy: -1).contains($0.frame) }) {
+                    return interactive[0]
+                }
             }
             let listed = matches.prefix(10).enumerated().map { "  \($0.offset): " + UIElementFormatter.line($0.element) }
             throw .invalidArgument("\(matches.count) elements match \(selector); add `index` or a narrower field:\n"
@@ -159,7 +162,8 @@ extension CGRect {
 }
 
 /// A system alert (permission prompts and the like) as SpringBoard shows it: SpringBoard is the frontmost
-/// UI and its buttons have no identifiers, unlike the icons of the home screen.
+/// UI and its buttons have no identifiers, unlike the icons of the home screen. On iPhones XCUITest also marks
+/// alerts and sheets inside apps, such as the system's "Save Password?".
 struct SystemAlert: Equatable {
     var texts: [String]
     var buttons: [UIElement]
@@ -167,9 +171,16 @@ struct SystemAlert: Equatable {
     var title: String? { texts.first }
 
     static func find(in tree: UIElement) -> SystemAlert? {
-        guard tree.role == UIRole.application, tree.label == nil else { return nil }
-        let elements = tree.flattened.dropFirst()
-        let buttons = elements.filter { $0.role == "button" && $0.identifier == nil && $0.label != nil }
+        if tree.role == UIRole.application, tree.label == nil {
+            let elements = tree.flattened.dropFirst()
+            let buttons = elements.filter { $0.role == "button" && $0.identifier == nil && $0.label != nil }
+            if !buttons.isEmpty {
+                return SystemAlert(texts: elements.filter { $0.role == "text" }.compactMap(\.label), buttons: buttons)
+            }
+        }
+        guard let dialog = tree.flattened.dropFirst().first(where: { $0.role == "alert" || $0.role == "sheet" }) else { return nil }
+        let elements = dialog.flattened.dropFirst()
+        let buttons = elements.filter { $0.role == "button" && $0.label != nil }
         guard !buttons.isEmpty else { return nil }
         return SystemAlert(texts: elements.filter { $0.role == "text" }.compactMap(\.label), buttons: buttons)
     }

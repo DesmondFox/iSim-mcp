@@ -55,6 +55,46 @@ final class FakeUI: InputInjecting, AccessibilityProviding, @unchecked Sendable 
     }
 }
 
+/// The UI agent stand-in: FakeUI that also types any script itself, as the agent does.
+final class FakeAgent: InputInjecting, AccessibilityProviding, TextTyping, @unchecked Sendable {
+    let ui: FakeUI
+    private let lock = NSLock()
+    private(set) var typed: [String] = []
+
+    init(_ ui: FakeUI) {
+        self.ui = ui
+    }
+
+    func typeText(udid: String, _ text: String) async throws {
+        lock.withLock { typed.append(text) }
+        try await ui.pressKeys(udid: udid, [])
+    }
+
+    func tap(udid: String, at point: CGPoint, count: Int, hold: Duration) async throws {
+        try await ui.tap(udid: udid, at: point, count: count, hold: hold)
+    }
+
+    func swipe(udid: String, from start: CGPoint, to end: CGPoint, duration: Duration) async throws {
+        try await ui.swipe(udid: udid, from: start, to: end, duration: duration)
+    }
+
+    func pressKeys(udid: String, _ strokes: [KeyStroke]) async throws {
+        try await ui.pressKeys(udid: udid, strokes)
+    }
+
+    func pressButton(udid: String, _ button: HardwareButton, hold: Duration) async throws {
+        try await ui.pressButton(udid: udid, button, hold: hold)
+    }
+
+    func uiTree(udid: String, maxDepth: Int?) async throws -> UIElement {
+        try await ui.uiTree(udid: udid, maxDepth: maxDepth)
+    }
+
+    func element(udid: String, at point: CGPoint) async throws -> UIElement? {
+        try await ui.element(udid: udid, at: point)
+    }
+}
+
 private func app(_ label: String?, pid: Int = 42, _ children: UIElement...) -> UIElement {
     UIElement(role: "application", label: label, frame: CGRect(x: 0, y: 0, width: 402, height: 874), pid: pid, children: children)
 }
@@ -110,10 +150,10 @@ struct UIToolTests {
         runner.on("defaults read com.apple.Accessibility ApplicationAccessibilityEnabled", stdout: "1\n")
     }
 
-    private func call(_ name: String, _ arguments: [String: Value], ui: FakeUI) async throws -> CallTool.Result {
+    private func call(_ name: String, _ arguments: [String: Value], ui: FakeUI, agent: FakeAgent? = nil) async throws -> CallTool.Result {
         let context = ToolContext(
             runner: runner, xcode: .success(XcodeEnvironment(developerDir: "/Xcode.app/Contents/Developer", version: "27.1", build: nil)),
-            uiBackend: ui)
+            uiBackend: ui, agentBackend: agent, agentPaths: nil)
         return try await ISimServer.makeRegistry(toolsets: Set(Toolset.allCases))
             .call(name, arguments: arguments.merging(["device": "SIM-1"]) { current, _ in current }, context: context)
     }
@@ -178,11 +218,63 @@ struct UIToolTests {
         #expect(ui.taps.isEmpty)
     }
 
-    @Test func iPhonesAreRefusedBeforeAnythingRuns() async throws {
+    @Test func iPhonesGoThroughTheAgent() async throws {
         let ui = FakeUI(loginScreen)
-        let result = try await call("tap", ["device": "PHONE-1", "x": 10, "y": 10], ui: ui)
-        #expect(text(result).hasPrefix("tap is not available on physical devices."))
+        let agent = FakeAgent(FakeUI(loginScreen))
+        let result = try await call("tap", ["device": "PHONE-1", "element": ["identifier": "loginButton"]], ui: ui, agent: agent)
+        #expect(text(result) == "Tapped [button] \"Log In\" id=loginButton (166,512 70×34) at (201,529).")
+        #expect(agent.ui.taps == [CGPoint(x: 201, y: 529)])
         #expect(ui.taps.isEmpty)
+    }
+
+    @Test func theAgentTypesAnyScriptWithoutThePasteboard() async throws {
+        let typed = app("iSim Test", node("text_field", value: "Привет 👋", id: "username", CGRect(x: 24, y: 412, width: 354, height: 34), focused: true))
+        let agent = FakeAgent(FakeUI(loginScreen, loginScreen, typed, advancingOnKeys: true))
+        let result = try await call("type_text", ["device": "PHONE-1", "text": "Привет 👋", "element": ["identifier": "username"]],
+                                    ui: FakeUI(loginScreen), agent: agent)
+        #expect(agent.typed == ["Привет 👋"])
+        #expect(!runner.calls.contains { $0.commandLine.contains("pasteboard") })
+        #expect(text(result).hasPrefix("Typed 8 character(s) with the keyboard (tapped"))
+        #expect(text(result).hasSuffix("\nFocused: [text_field] value=\"Привет 👋\" id=username (24,412 354×34) focused"))
+    }
+
+    @Test func aPastePromptIsHandedToHandleSystemAlert() async throws {
+        runner.on("device pasteboard copy", stdout: #"{"info":{"outcome":"success"},"result":{}}"#)
+        let prompt = app(nil, pid: 7,
+            node("text", "“Probe” would like to paste from “dtpasteboardd”", CGRect(x: 84, y: 376, width: 260, height: 42)),
+            node("button", "Allow Paste", CGRect(x: 70, y: 465, width: 288, height: 48)),
+            node("button", "Don’t Allow Paste", CGRect(x: 70, y: 521, width: 288, height: 48)))
+        let agent = FakeAgent(FakeUI(flutterForm(email: nil), flutterForm(email: nil), prompt, advancingOnKeys: true))
+        let result = try await call("type_text", ["device": "PHONE-1", "text": "x", "element": ["label": "Email"], "method": "paste"],
+                                    ui: FakeUI(loginScreen), agent: agent)
+        #expect(text(result).hasPrefix("Pressed Cmd+V, and a system alert asks first: “Probe” would like to paste"))
+        #expect(text(result).hasSuffix("Answer it with handle_system_alert (accept lets the paste through)."))
+        // No long press for the edit menu under the alert.
+        #expect(agent.ui.holds == [.milliseconds(60)])
+    }
+
+    @Test func aRowsOwnTextDoesNotMakeItAmbiguous() async throws {
+        let row = CGRect(x: 20, y: 766, width: 388, height: 52)
+        let screen = app("Settings", [
+            node("button", "General", id: "com.apple.settings.general", row),
+            node("text", "General", CGRect(x: 38, y: 778, width: 101, height: 28)),
+        ])
+        let result = try await call("tap", ["element": ["label": "General"]], ui: FakeUI(screen))
+        #expect(text(result) == "Tapped [button] \"General\" id=com.apple.settings.general (20,766 388×52) at (211,792).")
+    }
+
+    @Test func answersSheetsTheAgentMarks() async throws {
+        let sheet = app("iSim Test", [
+            UIElement(role: "sheet", label: "Save Password?", frame: CGRect(x: 54, y: 333, width: 320, height: 272), children: [
+                node("text", "Save Password?", CGRect(x: 84, y: 435, width: 260, height: 20)),
+                node("button", "Not Now", CGRect(x: 70, y: 542, width: 140, height: 48)),
+                node("button", "Save", CGRect(x: 218, y: 542, width: 140, height: 48)),
+            ]),
+        ])
+        let agent = FakeAgent(FakeUI(sheet, loginScreen))
+        let result = try await call("handle_system_alert", ["device": "PHONE-1", "action": "deny"], ui: FakeUI(loginScreen), agent: agent)
+        #expect(text(result) == "Tapped \"Not Now\" in the alert: Save Password?")
+        #expect(agent.ui.taps == [CGPoint(x: 140, y: 566)])
     }
 
     @Test func typesASCIIWithTheKeyboardAndReportsTheField() async throws {

@@ -1,3 +1,4 @@
+import AgentBackend
 import DeviceCore
 import DevicectlBackend
 import Foundation
@@ -14,28 +15,42 @@ public struct ToolContext: Sendable {
     public let simctl: SimctlBackend
     public let devicectl: DevicectlBackend
     public let simbridge: SimBridgeBackend
+    /// The on-device UI agent: iPhones, and simulators it was started on.
+    public let agent: AgentManager
     public let displays: DisplayCache
     public let accessibility: AccessibilityPreparation
     /// Where screenshots go when the caller asks for a path but gives no `save_path`.
     public let screenshotDirectory: URL
 
-    /// `uiBackend` replaces SimBridge for simulator input and accessibility (tests).
+    /// `uiBackend` replaces SimBridge for simulator input and accessibility, `agentBackend` the UI agent (tests).
+    /// `teamID` signs the agent for iPhones unless ui_agent is given another.
     public init(
         runner: any ProcessRunning,
         xcode: Result<XcodeEnvironment, ISimError>,
         screenshotDirectory: URL = ToolContext.defaultScreenshotDirectory,
-        uiBackend: (any InputInjecting & AccessibilityProviding)? = nil
+        uiBackend: (any InputInjecting & AccessibilityProviding)? = nil,
+        agentBackend: (any InputInjecting & AccessibilityProviding)? = nil,
+        agentPaths: AgentPaths? = AgentPaths.locate(),
+        teamID: String? = nil
     ) {
         let simctl = SimctlBackend(runner: runner)
         let devicectl = DevicectlBackend(runner: runner)
         let simbridge = SimBridgeBackend(developerDir: (try? xcode.get())?.developerDir, orientation: devicectl)
+        let session = DeviceSession(sources: [simctl, devicectl])
+        let agent = AgentManager(
+            runner: runner, launcher: runner as? any BackgroundLaunching ?? ProcessRunner(), xcode: try? xcode.get(),
+            paths: agentPaths, defaultTeam: teamID, lockState: { try? await devicectl.isLocked(udid: $0) })
         self.runner = runner
         self.xcode = xcode
         self.simctl = simctl
         self.devicectl = devicectl
         self.simbridge = simbridge
-        self.session = DeviceSession(sources: [simctl, devicectl])
-        self.router = ToolRouter(backends: [.simctl: simctl, .devicectl: devicectl, .simbridge: uiBackend ?? simbridge])
+        self.agent = agent
+        self.session = session
+        let agentUI = agentBackend ?? AgentBackend(manager: agent, resolve: { try await session.resolve($0) })
+        self.router = ToolRouter(
+            backends: [.simctl: simctl, .devicectl: devicectl, .simbridge: uiBackend ?? simbridge, .agent: agentUI],
+            agentRouting: agent.routing)
         self.displays = DisplayCache()
         self.accessibility = AccessibilityPreparation(simctl: simctl)
         self.screenshotDirectory = screenshotDirectory
