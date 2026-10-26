@@ -10,7 +10,8 @@ enum LogTools {
         "bundle_id": Schema.string("An app: entries of its process and of its subsystem (when the subsystem is its bundle id)."),
         "process": Schema.string("Entries of the process with this executable name, e.g. SpringBoard."),
         "subsystem": Schema.string("Entries of this os_log subsystem, e.g. com.example.app.network."),
-        "predicate": Schema.string(#"A raw NSPredicate as `log` takes it, e.g. eventMessage CONTAINS "error"."#),
+        "predicate": Schema.string(
+            #"A raw NSPredicate as `log` takes it, e.g. composedMessage CONTAINS "error" or logType == "fault". On an iPhone it is checked on the Mac against composedMessage, process, processIdentifier, sender, subsystem, category and logType."#),
         "level": Schema.string("Lowest level to include. Default debug.", enum: LogFilter.Level.allCases.map(\.rawValue)),
     ]
 
@@ -20,9 +21,11 @@ enum LogTools {
         name: "start_log_capture",
         toolset: .logs,
         description: """
-            Start capturing a simulator's unified log (os_log, Logger, NSLog) into a job; read it with read_log_capture as it \
-            grows. Narrow it with bundle_id, process, subsystem or predicate (at least one). An app's print() goes to stdout, not \
-            the unified log: capture that with launch_app(capture_output: true). Simulators only.
+            Start capturing the unified log (os_log, Logger, NSLog) of a simulator or an iPhone into a job; read it with \
+            read_log_capture as it grows. Narrow it with bundle_id, process, subsystem or predicate (at least one). Running \
+            apps keep running, so it can join a debug session such as `flutter run`. On an iPhone the entries come from \
+            the device's log relay, no root needed; the iPhone has to be connected by USB. An app's print() goes to \
+            stdout, not the unified log: capture that with launch_app(capture_output: true).
             """,
         inputSchema: Schema.deviceObject(filterProperties),
         annotations: .mutating
@@ -45,7 +48,7 @@ enum LogTools {
             level: try arguments.choice("level", default: LogFilter.Level.debug))
         var what: [String] = []
         if let bundleId = try nonEmpty("bundle_id") {
-            filter.app = (bundleId, try await context.simctl.executableName(udid: device.udid, bundleId: bundleId))
+            filter.app = (bundleId, try await executableName(of: bundleId, on: device, context: context))
             what.append(bundleId)
         }
         if let process = filter.process { what.append("process \(process)") }
@@ -55,6 +58,18 @@ enum LogTools {
             throw ISimError.invalidArgument("Pass bundle_id, process, subsystem or predicate: the whole system log runs to thousands of lines a second.")
         }
         return (filter, what.joined(separator: ", "))
+    }
+
+    /// The app's executable: log entries and an iPhone's crash report names call its process by it. devicectl
+    /// does not report it, but the bundle's folder is nearly always named the same.
+    static func executableName(of bundleId: String, on device: Device, context: ToolContext) async throws -> String {
+        switch device.kind {
+        case .simulator:
+            return try await context.simctl.executableName(udid: device.udid, bundleId: bundleId)
+        case .physical:
+            let details = try await context.router.backend(.appInfo, for: device, as: (any AppInspecting).self).appInfo(udid: device.udid, bundleId: bundleId)
+            return details.app.path.flatMap { URL(string: $0)?.deletingPathExtension().lastPathComponent } ?? bundleId
+        }
     }
 
     static let readLogCapture = ToolDefinition(
@@ -115,8 +130,9 @@ enum LogTools {
         name: "query_logs",
         toolset: .logs,
         description: """
-            Unified log entries of the last few minutes from a simulator, the most recent max_lines of them: what happened \
-            before a crash or a failed step. Filter with bundle_id, process, subsystem or predicate. Simulators only.
+            Unified log entries of the last few minutes, the most recent max_lines of them: what happened before a crash or \
+            a failed step. Filter with bundle_id, process, subsystem or predicate. On an iPhone (connected by USB) this \
+            first downloads the device's log archive, about 230 MB in 10 s; to follow a log, use start_log_capture.
             """,
         inputSchema: Schema.deviceObject(filterProperties.merging([
             "last": Schema.string("How far back: 30s, 5m, 1h. Default 5m."),
@@ -176,8 +192,7 @@ enum LogTools {
         // iPhones list reports by file name, which starts with the process name.
         var executable: String?
         if let bundleId, device.kind == .physical {
-            let details = try await context.router.backend(.appInfo, for: device, as: (any AppInspecting).self).appInfo(udid: device.udid, bundleId: bundleId)
-            executable = details.app.path.flatMap { URL(string: $0)?.deletingPathExtension().lastPathComponent }
+            executable = try await executableName(of: bundleId, on: device, context: context)
         }
         let reports = try await provider.crashReports(udid: device.udid).filter { report in
             (includeOther || report.kind == .crash)

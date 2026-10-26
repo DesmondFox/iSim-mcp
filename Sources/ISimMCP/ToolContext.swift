@@ -3,6 +3,7 @@ import APNsBackend
 import DeviceCore
 import DevicectlBackend
 import Foundation
+import LockdownBackend
 import ProcessKit
 import SimBridgeBackend
 import SimctlBackend
@@ -61,7 +62,10 @@ public struct ToolContext: Sendable {
         self.session = session
         let agentUI = agentBackend ?? AgentBackend(manager: agent, resolve: { try await session.resolve($0) })
         self.router = ToolRouter(
-            backends: [.simctl: simctl, .devicectl: devicectl, .simbridge: uiBackend ?? simbridge, .agent: agentUI],
+            backends: [
+                .simctl: simctl, .devicectl: devicectl, .simbridge: uiBackend ?? simbridge, .agent: agentUI,
+                .lockdown: LockdownBackend(runner: runner),
+            ],
             agentRouting: agent.routing)
         self.displays = DisplayCache()
         self.accessibility = AccessibilityPreparation(simctl: simctl)

@@ -126,6 +126,8 @@ public enum BackendID: String, Sendable, CaseIterable {
     case simbridge
     /// The XCUITest agent running on the device (ISimAgent).
     case agent
+    /// lockdownd services on an iPhone, reached through usbmuxd with this Mac's pair record (os_trace_relay).
+    case lockdown
 }
 
 /// Which backend serves which capability on which kind of device (PLAN.md, section 5).
@@ -200,8 +202,9 @@ public struct CapabilityMatrix: Sendable {
         // devicectl reports success on a simulator, but the app gets nothing; CoreSimulator's own call works.
         .memoryWarning: Entry(simulator: .simbridge, physical: .devicectl),
         .recording: Entry(simulator: .simctl, physical: nil, hint: "iPhones do not offer screen recording to developer tools (no Screen Recording capability); take screenshots instead."),
-        .logStream: Entry(simulator: .simctl, physical: nil, hint: "Streaming an iPhone's unified log needs root. launch_app(capture_output: true) captures the app's stdout and stderr instead."),
-        .queryLogs: Entry(simulator: .simctl, physical: nil, hint: "Collecting an iPhone's unified log needs root (`sudo log collect --device-udid <udid>`). launch_app(capture_output: true) captures the app's stdout and stderr instead."),
+        // `log collect --device-udid` needs root; os_trace_relay, Console.app's source, does not.
+        .logStream: Entry(simulator: .simctl, physical: .lockdown),
+        .queryLogs: Entry(simulator: .simctl, physical: .lockdown),
         .consoleCapture: Entry(simulator: .simctl, physical: .devicectl),
         // Simulator apps are Mac processes: their reports are in ~/Library/Logs/DiagnosticReports.
         .crashReports: Entry(simulator: .simctl, physical: .devicectl),
