@@ -5,7 +5,7 @@ import ProcessKit
 
 /// Input and UI inspection through the on-device XCUITest agent: iPhones, and simulators where it was started
 /// with ui_agent. The first call on a device builds and starts the agent.
-public struct AgentBackend: InputInjecting, AccessibilityProviding, TextTyping {
+public struct AgentBackend: InputInjecting, AccessibilityProviding, TextTyping, GestureInjecting {
     public let manager: AgentManager
     private let resolve: @Sendable (String) async throws -> Device
 
@@ -26,6 +26,22 @@ public struct AgentBackend: InputInjecting, AccessibilityProviding, TextTyping {
         try await call(udid, "POST", "/swipe", [
             "from_x": start.x, "from_y": start.y, "to_x": end.x, "to_y": end.y, "duration_ms": milliseconds(duration),
         ], timeout: .seconds(10) + duration)
+    }
+
+    public func touchPath(udid: String, _ samples: [TouchSample]) async throws {
+        try await path(udid, fingers: [samples.map { ($0.point, $0.offset) }])
+    }
+
+    public func twoFingerPath(udid: String, _ samples: [TwoFingerSample]) async throws {
+        try await path(udid, fingers: [samples.map { ($0.first, $0.offset) }, samples.map { ($0.second, $0.offset) }])
+    }
+
+    private func path(_ udid: String, fingers: [[(CGPoint, Duration)]]) async throws {
+        let duration = fingers.compactMap { $0.last?.1 }.max() ?? .zero
+        let body = fingers.map { points in
+            points.map { ["x": $0.0.x, "y": $0.0.y, "t_ms": milliseconds($0.1)] as [String: Any] }
+        }
+        try await call(udid, "POST", "/path", ["fingers": body], timeout: .seconds(10) + duration)
     }
 
     public func pressKeys(udid: String, _ strokes: [KeyStroke]) async throws {

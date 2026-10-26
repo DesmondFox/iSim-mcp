@@ -1,3 +1,4 @@
+import APNsBackend
 import ArgumentParser
 import Foundation
 import ISimMCP
@@ -19,6 +20,12 @@ struct ISimCommand: AsyncParsableCommand {
 
     @Option(help: "Apple development team ID that signs the UI agent for iPhones (default: ISIM_TEAM_ID, the team used last, or the only team in Xcode).")
     var teamId: String?
+
+    @Option(help: "APNs auth key (.p8) for send_push mode=apns (default: ISIM_APNS_KEY_PATH). Needs --apns-key-id and a team ID.")
+    var apnsKeyPath: String?
+
+    @Option(help: "Key ID of the APNs auth key (default: ISIM_APNS_KEY_ID).")
+    var apnsKeyId: String?
 
     @Flag(help: "Print the enabled tools and exit.")
     var listTools = false
@@ -45,8 +52,15 @@ struct ISimCommand: AsyncParsableCommand {
             handler.logLevel = level
             return handler
         }
-        let team = teamId ?? ProcessInfo.processInfo.environment["ISIM_TEAM_ID"]
-        try await ISimServer.run(toolsets: enabled, teamID: team, logger: Logger(label: "isim-mcp"))
+        let environment = ProcessInfo.processInfo.environment
+        let team = teamId ?? environment["ISIM_TEAM_ID"]
+        let apns = APNsCredentials.from(
+            keyPath: apnsKeyPath ?? environment["ISIM_APNS_KEY_PATH"], keyID: apnsKeyId ?? environment["ISIM_APNS_KEY_ID"], teamID: team)
+        let logger = Logger(label: "isim-mcp")
+        if apns == nil && (apnsKeyPath ?? environment["ISIM_APNS_KEY_PATH"]) != nil {
+            logger.warning("APNs key given without a key ID or team ID; send_push mode=apns stays off.")
+        }
+        try await ISimServer.run(toolsets: enabled, teamID: team, apns: apns, logger: logger)
     }
 }
 

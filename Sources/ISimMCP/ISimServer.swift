@@ -1,4 +1,5 @@
 import AgentBackend
+import APNsBackend
 import DeviceCore
 import Foundation
 import Logging
@@ -21,29 +22,33 @@ public enum ISimServer {
         handle_system_alert answers permission prompts. On an iPhone these go through an XCUITest agent that the first \
         UI tool builds and starts (ui_agent shows it); keep the iPhone unlocked.
         Coordinates for UI tools are in points; screenshot reports how image pixels map to points.
+        Long-running captures are jobs: launch_app(capture_output) and start_log_capture return a job id for \
+        read_log_capture and stop_log_capture (logs toolset), start_recording one for stop_recording.
+        App files and UserDefaults are in the `data` toolset, crash reports in `logs`.
         If anything fails, call doctor.
         """
 
     public static func allTools() -> [ToolDefinition] {
-        CoreTools.all + AgentTools.all + DeviceTools.all + AppTools.all + ScreenTools.all + UITools.all + SystemTools.all
+        CoreTools.all + AgentTools.all + DeviceTools.all + AppTools.all + ScreenTools.all + UITools.all + GestureTools.all
+            + SystemTools.all + DataTools.all + LogTools.all + AdvancedTools.all
     }
 
     public static func makeRegistry(toolsets: Set<Toolset>) -> ToolRegistry {
         ToolRegistry(definitions: allTools(), enabledToolsets: toolsets)
     }
 
-    /// `teamID` signs the UI agent for iPhones.
-    public static func makeContext(teamID: String? = nil) -> ToolContext {
+    /// `teamID` signs the UI agent for iPhones; `apns` sends real pushes.
+    public static func makeContext(teamID: String? = nil, apns: APNsCredentials? = nil) -> ToolContext {
         let xcode = Result { () throws(ISimError) in try XcodeEnvironment.detect() }
         let runner = ProcessRunner(baseEnvironment: (try? xcode.get())?.childEnvironment ?? [:])
-        return ToolContext(runner: runner, xcode: xcode, teamID: teamID)
+        return ToolContext(runner: runner, xcode: xcode, teamID: teamID, apns: apns)
     }
 
-    /// Serves MCP over stdio until the client closes the connection. UI agents started meanwhile stop with it.
-    public static func run(toolsets: Set<Toolset>, teamID: String?, logger: Logger) async throws {
+    /// Serves MCP over stdio until the client closes the connection. UI agents and jobs started meanwhile stop with it.
+    public static func run(toolsets: Set<Toolset>, teamID: String?, apns: APNsCredentials?, logger: Logger) async throws {
         let registry = makeRegistry(toolsets: toolsets)
-        let context = makeContext(teamID: teamID)
-        let signals = stopAgentsOnSignals(context.agent)
+        let context = makeContext(teamID: teamID, apns: apns)
+        let signals = stopOnSignals(context)
         defer { signals.forEach { $0.cancel() } }
         switch context.xcode {
         case .success(let xcode):
@@ -74,17 +79,24 @@ public enum ISimServer {
 
         try await server.start(transport: StdioTransport(logger: logger))
         await server.waitUntilCompleted()
-        await context.agent.stopAll()
+        await stopAll(context)
     }
 
-    /// A client that ends the server with SIGTERM or SIGINT would leave agents running on devices.
-    private static func stopAgentsOnSignals(_ agent: AgentManager) -> [any DispatchSourceSignal] {
+    /// Recordings finish their files; agents leave the devices.
+    private static func stopAll(_ context: ToolContext) async {
+        async let jobs: Void = context.jobs.stopAll()
+        async let agents: Void = context.agent.stopAll()
+        _ = await (jobs, agents)
+    }
+
+    /// A client that ends the server with SIGTERM or SIGINT would leave agents running on devices and recordings unfinished.
+    private static func stopOnSignals(_ context: ToolContext) -> [any DispatchSourceSignal] {
         [SIGTERM, SIGINT].map { number in
             signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
             source.setEventHandler {
                 Task {
-                    await agent.stopAll()
+                    await stopAll(context)
                     exit(128 + number)
                 }
             }

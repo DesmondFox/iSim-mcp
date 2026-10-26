@@ -28,6 +28,11 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)swipeFrom:(CGPoint)start to:(CGPoint)end duration:(NSTimeInterval)duration
       orientation:(UIInterfaceOrientation)orientation error:(NSError **)error;
 
+/// Fingers moving along their paths at the same time; each point is {x, y, t} with t in seconds from the start.
+/// A finger touches down at its first point and lifts at its last.
++ (BOOL)performTouchPaths:(NSArray<NSArray<NSDictionary *> *> *)fingers
+                orientation:(UIInterfaceOrientation)orientation error:(NSError **)error;
+
 /// Presses a key of a hardware keyboard with `modifiers` (XCUIKeyModifierFlags) held; a character or an
 /// XCUIKeyboardKey value. One key per event: of several keys in one event path only the first arrives (Xcode 27).
 + (BOOL)pressKey:(NSString *)key modifiers:(NSUInteger)modifiers error:(NSError **)error;

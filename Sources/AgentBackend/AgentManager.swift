@@ -7,7 +7,7 @@ import ProcessKit
 /// XCUITest over HTTP.
 public actor AgentManager {
     /// Bumped with the agent's `Agent.protocolVersion`; an agent of another version is replaced.
-    static let protocolVersion = 1
+    static let protocolVersion = 2
     /// The agent's port on an iPhone. Not 8100, which WebDriverAgent takes.
     public static let devicePort: UInt16 = 22087
     /// Installing the runner on a device for the first time takes the longest.

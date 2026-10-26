@@ -1,9 +1,10 @@
+import AVFoundation
 import DeviceCore
 import Foundation
 import MCP
 
 enum ScreenTools {
-    static let all: [ToolDefinition] = [screenshot, getScreenInfo, addMedia]
+    static let all: [ToolDefinition] = [screenshot, getScreenInfo, startRecording, stopRecording, addMedia]
 
     enum ReturnMode: String, CaseIterable {
         case image
@@ -129,6 +130,74 @@ enum ScreenTools {
         return .text("Added \(paths.count) file(s) to \"\(device.name)\": " + paths.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))
     }
 
+    // MARK: Recording
+
+    static let startRecording = ToolDefinition(
+        name: "start_recording",
+        toolset: .screen,
+        description: """
+            Start recording the screen to a video file; returns a job id for stop_recording, which finishes the file. \
+            Simulators only: iPhones offer no screen recording to developer tools.
+            """,
+        inputSchema: Schema.deviceObject([
+            "path": Schema.string("Where to write the video (QuickTime). Default: a new .mov in ~/Library/Caches/iSim-mcp/recordings."),
+            "codec": Schema.string("Video codec; h264 plays everywhere, hevc is smaller.", enum: VideoCodec.allCases.map(\.rawValue)),
+        ]),
+        annotations: .mutating
+    ) { arguments, context in
+        try context.requireXcode()
+        let codec = try arguments.choice("codec", default: VideoCodec.h264)
+        let device = try await context.session.resolveReady(try arguments.device)
+        let recorder = try context.router.backend(.recording, for: device, as: (any ScreenRecording).self)
+        let url: URL
+        if let path = try arguments.string("path").flatMap({ $0.isEmpty ? nil : ($0 as NSString).expandingTildeInPath }) {
+            url = URL(fileURLWithPath: path)
+        } else {
+            url = ToolContext.defaultRecordingDirectory.appendingPathComponent("\(fileStem(device))-\(timestamp()).\(recorder.videoFileExtension)")
+        }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let job = try await context.jobs.start(
+            .recording, command: recorder.recordingCommand(udid: device.udid, path: url.path, codec: codec), device: device,
+            title: "screen recording of \"\(device.name)\"", product: url)
+        return .text("Recording \"\(device.name)\" to \(url.path) (job \(job.id)). Stop it with stop_recording(job_id: \"\(job.id)\").")
+    }
+
+    static let stopRecording = ToolDefinition(
+        name: "stop_recording",
+        toolset: .screen,
+        description: "Stop a screen recording, wait until the video file is finished, and return its path, duration and size.",
+        inputSchema: Schema.object([
+            "job_id": Schema.string("The recording's job id from start_recording. Default: the only recording in progress."),
+        ]),
+        annotations: .mutating
+    ) { arguments, context in
+        let id = try await context.jobID(arguments, kinds: [.recording], running: true)
+        guard let job = await context.jobs.stop(id), let video = job.product else {
+            throw ISimError.notFound("No recording \"\(id)\".")
+        }
+        let seconds = String(format: "%.1f", (job.endedAt ?? Date()).timeIntervalSince(job.startedAt))
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: video.path))?[.size] as? Int, size > 0 else {
+            let output = FileManager.default.contents(atPath: job.log.path).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            throw ISimError.commandFailed(command: "stop_recording", message: "no video was written after \(seconds) s. Recorder output: "
+                + output.split(separator: "\n").suffix(5).joined(separator: " "))
+        }
+        var duration = ""
+        if let length = try? await AVURLAsset(url: video).load(.duration), length.seconds.isFinite {
+            duration = String(format: "%.1f s, ", length.seconds)
+        }
+        return .text("Saved the recording of \"\(job.deviceName)\" (\(duration)\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))) to \(video.path).")
+    }
+
+    static func fileStem(_ device: Device) -> String {
+        device.name.replacingOccurrences(of: "[^A-Za-z0-9]+", with: "-", options: .regularExpression)
+    }
+
+    static func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return formatter.string(from: Date())
+    }
+
     private static func displayScale(of device: Device, context: ToolContext) async -> Double? {
         guard let provider = try? context.router.backend(.displayInfo, for: device, as: (any DisplayInfoProviding).self) else {
             return nil
@@ -158,11 +227,7 @@ enum ScreenTools {
         if let savePath {
             url = URL(fileURLWithPath: savePath)
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
-            let stamp = formatter.string(from: Date())
-            let name = device.name.replacingOccurrences(of: "[^A-Za-z0-9]+", with: "-", options: .regularExpression)
-            url = directory.appendingPathComponent("\(name)-\(stamp).\(image.format.fileExtension)")
+            url = directory.appendingPathComponent("\(fileStem(device))-\(timestamp()).\(image.format.fileExtension)")
         }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try image.data.write(to: url)

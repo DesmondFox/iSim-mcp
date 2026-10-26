@@ -1,4 +1,5 @@
 import AgentBackend
+import APNsBackend
 import DeviceCore
 import DevicectlBackend
 import Foundation
@@ -21,9 +22,14 @@ public struct ToolContext: Sendable {
     public let accessibility: AccessibilityPreparation
     /// Where screenshots go when the caller asks for a path but gives no `save_path`.
     public let screenshotDirectory: URL
+    /// Log captures, app consoles and screen recordings.
+    public let jobs: JobManager
+    /// Real pushes through APNs; nil when the server was started without a provider key.
+    public let apns: APNsClient?
 
     /// `uiBackend` replaces SimBridge for simulator input and accessibility, `agentBackend` the UI agent (tests).
-    /// `teamID` signs the agent for iPhones unless ui_agent is given another.
+    /// `teamID` signs the agent for iPhones unless ui_agent is given another. `launcher` runs background commands:
+    /// UI agents and jobs.
     public init(
         runner: any ProcessRunning,
         xcode: Result<XcodeEnvironment, ISimError>,
@@ -31,14 +37,20 @@ public struct ToolContext: Sendable {
         uiBackend: (any InputInjecting & AccessibilityProviding)? = nil,
         agentBackend: (any InputInjecting & AccessibilityProviding)? = nil,
         agentPaths: AgentPaths? = AgentPaths.locate(),
-        teamID: String? = nil
+        teamID: String? = nil,
+        launcher: (any BackgroundLaunching)? = nil,
+        jobDirectory: URL = JobManager.defaultDirectory,
+        diagnosticReports: URL? = nil,
+        apns: APNsCredentials? = nil,
+        apnsTransport: (any HTTPTransport)? = nil
     ) {
-        let simctl = SimctlBackend(runner: runner)
+        let simctl = SimctlBackend(runner: runner, diagnosticReports: diagnosticReports)
         let devicectl = DevicectlBackend(runner: runner)
         let simbridge = SimBridgeBackend(developerDir: (try? xcode.get())?.developerDir, orientation: devicectl)
         let session = DeviceSession(sources: [simctl, devicectl])
+        let launcher = launcher ?? runner as? any BackgroundLaunching ?? ProcessRunner()
         let agent = AgentManager(
-            runner: runner, launcher: runner as? any BackgroundLaunching ?? ProcessRunner(), xcode: try? xcode.get(),
+            runner: runner, launcher: launcher, xcode: try? xcode.get(),
             paths: agentPaths, defaultTeam: teamID, lockState: { try? await devicectl.isLocked(udid: $0) })
         self.runner = runner
         self.xcode = xcode
@@ -54,11 +66,19 @@ public struct ToolContext: Sendable {
         self.displays = DisplayCache()
         self.accessibility = AccessibilityPreparation(simctl: simctl)
         self.screenshotDirectory = screenshotDirectory
+        self.jobs = JobManager(launcher: launcher, directory: jobDirectory)
+        self.apns = apns.map { APNsClient(credentials: $0, transport: apnsTransport ?? URLSession.shared) }
     }
 
     public static var defaultScreenshotDirectory: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("iSim-mcp/screenshots", isDirectory: true)
+    }
+
+    /// Where recordings go without a `path`.
+    public static var defaultRecordingDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("iSim-mcp/recordings", isDirectory: true)
     }
 
     /// Fails every device tool with a clear message when Xcode is missing or too old.

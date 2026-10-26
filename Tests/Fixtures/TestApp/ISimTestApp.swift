@@ -1,7 +1,10 @@
-// Test app for UI tools: login → list → detail, a text field for typing, buttons that trigger system alerts.
+// Test app for UI tools: login → list → detail, a text field for typing, buttons that trigger system alerts,
+// and a lab screen (launch with -lab, or Open Lab after logging in) for gestures, shake, memory warnings,
+// UserDefaults, locale, logs and a crash.
 // Built without Xcode by `make test-app` (swiftc for the iOS Simulator, ad-hoc signed).
 
 import CoreLocation
+import os
 import SwiftUI
 import UserNotifications
 
@@ -16,7 +19,9 @@ struct RootView: View {
     @State private var user: String?
 
     var body: some View {
-        if let user {
+        if CommandLine.arguments.contains("-lab") {
+            NavigationStack { LabView() }
+        } else if let user {
             ItemsView(user: user) { self.user = nil }
         } else {
             LoginView { user = $0 }
@@ -84,6 +89,7 @@ struct ItemsView: View {
                     Text("Notifications: \(notificationStatus)").accessibilityIdentifier("notificationStatus")
                     Button("Ask for Location") { location.request() }
                         .accessibilityIdentifier("askLocation")
+                    NavigationLink("Open Lab") { LabView() }.accessibilityIdentifier("openLab")
                 }
                 Section("Items") {
                     ForEach(items) { item in
@@ -125,5 +131,98 @@ final class LocationPrompt: NSObject, CLLocationManagerDelegate {
     func request() {
         manager.delegate = self
         manager.requestWhenInUseAuthorization()
+    }
+}
+
+/// Everything the app reports also goes to stdout (launch_app capture_output) and the unified log (start_log_capture).
+let log = Logger(subsystem: "dev.isimmcp.testapp", category: "lab")
+
+func report(_ message: String) {
+    print("ISimTestApp: \(message)")
+    log.info("\(message, privacy: .public)")
+}
+
+extension Notification.Name {
+    static let deviceDidShake = Notification.Name("ISimTestAppDeviceDidShake")
+}
+
+extension UIWindow {
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake { NotificationCenter.default.post(name: .deviceDidShake, object: nil) }
+        super.motionEnded(motion, with: event)
+    }
+}
+
+struct LabView: View {
+    @AppStorage("launchCount") private var launches = 0
+    @State private var greeting = UserDefaults.standard.string(forKey: "greeting") ?? "none"
+    @State private var shakes = 0
+    @State private var memoryWarnings = 0
+    @State private var drag = "none"
+    @State private var moves = 0
+    @State private var zoom: CGFloat = 1
+    @State private var rotation: Angle = .zero
+    @State private var counted = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Launches: \(launches)").accessibilityIdentifier("launches")
+            HStack {
+                Text("Greeting: \(greeting)").accessibilityIdentifier("greeting")
+                Spacer()
+                Button("Reload") { greeting = UserDefaults.standard.string(forKey: "greeting") ?? "none" }
+                    .accessibilityIdentifier("reloadGreeting")
+            }
+            Text("Locale: \(Locale.current.identifier), language: \(Locale.preferredLanguages.first ?? "?")")
+                .accessibilityIdentifier("locale")
+            Text("Shakes: \(shakes)").accessibilityIdentifier("shakes")
+            Text("Memory warnings: \(memoryWarnings)").accessibilityIdentifier("memoryWarnings")
+            Text("Drag: \(drag)").accessibilityIdentifier("drag")
+            Rectangle().fill(.blue.opacity(0.2)).frame(height: 160)
+                .overlay(Text("Drag here"))
+                .accessibilityIdentifier("dragArea")
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { _ in moves += 1 }
+                    .onEnded { value in
+                        drag = "\(moves) moves from \(point(value.startLocation)) to \(point(value.location))"
+                        report("drag \(drag)")
+                        moves = 0
+                    })
+            Text(String(format: "Zoom: %.2f, rotation: %.0f°", zoom, rotation.degrees)).accessibilityIdentifier("zoom")
+            Rectangle().fill(.green.opacity(0.2)).frame(height: 200)
+                .overlay(Text("Pinch or rotate here"))
+                .accessibilityIdentifier("pinchArea")
+                .gesture(MagnifyGesture().onChanged { zoom = $0.magnification }
+                    .simultaneously(with: RotateGesture().onChanged { rotation = $0.rotation }))
+            Button("Crash") {
+                report("crashing on purpose")
+                fatalError("iSim test crash")
+            }
+            .accessibilityIdentifier("crashButton")
+        }
+        .padding()
+        .navigationTitle("Lab")
+        .onAppear {
+            guard !counted else { return }
+            counted = true
+            launches += 1
+            report("lab opened, launch \(launches)")
+            let file = URL.documentsDirectory.appending(path: "hello.txt")
+            if !FileManager.default.fileExists(atPath: file.path) {
+                try? "Hello from iSim Test".write(to: file, atomically: true, encoding: .utf8)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+            shakes += 1
+            report("shake \(shakes)")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            memoryWarnings += 1
+            report("memory warning \(memoryWarnings)")
+        }
+    }
+
+    private func point(_ point: CGPoint) -> String {
+        "(\(Int(point.x)),\(Int(point.y)))"
     }
 }

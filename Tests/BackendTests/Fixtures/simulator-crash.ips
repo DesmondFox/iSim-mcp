@@ -1,0 +1,173 @@
+{"app_name":"ISimTestApp","timestamp":"2026-10-23 12:31:48.00 +0300","app_version":"1.0","slice_uuid":"4571bb7c-bdad-3cd7-971b-659f2a80ec9d","build_version":"1","platform":7,"bundleID":"dev.isimmcp.testapp","share_with_app_devs":0,"is_first_party":0,"bug_type":"309","os_version":"macOS 26.7.1 (25G241)","roots_installed":0,"name":"ISimTestApp","incident_id":"5C72F527-ECC4-4D7E-BE71-18F757390793"}
+{
+  "procName": "ISimTestApp",
+  "procPath": "\/Users\/USER\/Library\/Developer\/CoreSimulator\/Devices\/8D408511-219C-42B6-98FB-C0ED9F56836F\/data\/Containers\/Bundle\/Application\/ED34FD95-EE20-45C8-A801-AFCF9A9E3F8D\/ISimTestApp.app\/ISimTestApp",
+  "bundleInfo": {
+    "CFBundleShortVersionString": "1.0",
+    "CFBundleVersion": "1",
+    "CFBundleIdentifier": "dev.isimmcp.testapp"
+  },
+  "captureTime": "2026-10-23 12:31:45.5026 +0300",
+  "osVersion": {
+    "train": "macOS 26.7.1",
+    "build": "25G241",
+    "releaseType": "User"
+  },
+  "modelCode": "Mac17,8",
+  "pid": 7196,
+  "exception": {
+    "codes": "0x0000000000000001, 0x00000001c16c415c",
+    "rawCodes": [
+      1,
+      7540064604
+    ],
+    "type": "EXC_BREAKPOINT",
+    "signal": "SIGTRAP"
+  },
+  "termination": {
+    "flags": 0,
+    "code": 5,
+    "namespace": "SIGNAL",
+    "indicator": "Trace\/BPT trap: 5",
+    "byProc": "exc handler",
+    "byPid": 7196
+  },
+  "faultingThread": 0,
+  "threads": [
+    {
+      "triggered": true,
+      "id": 7648385,
+      "queue": "com.apple.main-thread",
+      "frames": [
+        {
+          "imageOffset": 1053020,
+          "symbol": "_assertionFailure(_:_:file:line:flags:)",
+          "symbolLocation": 208,
+          "imageIndex": 7
+        },
+        {
+          "imageOffset": 89840,
+          "symbol": "closure #6 in closure #1 in LabView.body.getter",
+          "symbolLocation": 176,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 7689704,
+          "symbol": "<deduplicated_symbol>",
+          "symbolLocation": 24,
+          "imageIndex": 8
+        },
+        {
+          "imageOffset": 15457696,
+          "symbol": "specialized static MainActor.assumeIsolated<A>(_:file:line:)",
+          "symbolLocation": 132,
+          "imageIndex": 8
+        },
+        {
+          "imageOffset": 15216172,
+          "symbol": "ButtonAction.callAsFunction()",
+          "symbolLocation": 308,
+          "imageIndex": 8
+        },
+        {
+          "imageOffset": 786272,
+          "symbol": "<deduplicated_symbol>",
+          "symbolLocation": 52,
+          "imageIndex": 8
+        },
+        {
+          "imageOffset": 7229000,
+          "symbol": "ButtonBehavior.ended()",
+          "symbolLocation": 160,
+          "imageIndex": 8
+        },
+        {
+          "imageOffset": 7253920,
+          "symbol": "partial apply for implicit closure #2 in implicit closure #1 in ButtonBehavior.body.getter",
+          "symbolLocation": 48,
+          "imageIndex": 8
+        }
+      ]
+    },
+    {
+      "id": 7648460,
+      "frames": []
+    }
+  ],
+  "usedImages": [
+    {
+      "arch": "arm64",
+      "base": 4299800576,
+      "CFBundleIdentifier": "dev.isimmcp.testapp",
+      "size": 212992,
+      "uuid": "4571bb7c-bdad-3cd7-971b-659f2a80ec9d",
+      "path": "\/Users\/USER\/Library\/Developer\/CoreSimulator\/Devices\/8D408511-219C-42B6-98FB-C0ED9F56836F\/data\/Containers\/Bundle\/Application\/ED34FD95-EE20-45C8-A801-AFCF9A9E3F8D\/ISimTestApp.app\/ISimTestApp",
+      "name": "ISimTestApp"
+    },
+    {
+      "arch": "arm64",
+      "base": 4303077376,
+      "size": 376832,
+      "uuid": "6fae6738-0877-3f55-80b9-6ae42fcb8606",
+      "path": "\/Volumes\/VOLUME\/*\/dyld_sim",
+      "name": "dyld_sim"
+    },
+    {
+      "arch": "arm64",
+      "base": 4300865536,
+      "size": 49152,
+      "uuid": "2ce8fbd2-3ba7-30fe-b583-fc6ebd57a869",
+      "path": "\/usr\/lib\/system\/libsystem_platform.dylib",
+      "name": "libsystem_platform.dylib"
+    },
+    {
+      "arch": "arm64",
+      "base": 4300341248,
+      "size": 245760,
+      "uuid": "5dfa5700-234a-38fb-a8f8-61adb40c46e4",
+      "path": "\/usr\/lib\/system\/libsystem_kernel.dylib",
+      "name": "libsystem_kernel.dylib"
+    },
+    {
+      "arch": "arm64",
+      "base": 4303912960,
+      "size": 65536,
+      "uuid": "7598cf40-3940-34f3-92ab-51e4e8eea7cd",
+      "path": "\/usr\/lib\/system\/libsystem_pthread.dylib",
+      "name": "libsystem_pthread.dylib"
+    },
+    {
+      "arch": "arm64",
+      "base": 4301520896,
+      "size": 49152,
+      "uuid": "12c7ec97-b630-3c56-b481-4edb0606935e",
+      "path": "\/Volumes\/VOLUME\/*\/libobjc-trampolines.dylib",
+      "name": "libobjc-trampolines.dylib"
+    },
+    {
+      "arch": "arm64e",
+      "base": 4301668352,
+      "size": 737280,
+      "uuid": "0263b88e-0b22-3b33-bbc0-483be879b513",
+      "path": "\/usr\/lib\/dyld",
+      "name": "dyld"
+    },
+    {
+      "arch": "arm64",
+      "base": 7539011584,
+      "size": 4962641,
+      "uuid": "4bac37fd-036c-3819-88c4-d0183173216a",
+      "path": "\/Volumes\/VOLUME\/*\/libswiftCore.dylib",
+      "name": "libswiftCore.dylib"
+    },
+    {
+      "arch": "arm64",
+      "base": 7672930304,
+      "size": 19362364,
+      "uuid": "480ec830-2694-3017-bea4-230c8818dded",
+      "path": "\/Volumes\/VOLUME\/*\/SwiftUI.framework\/SwiftUI",
+      "name": "SwiftUI"
+    }
+  ],
+  "bug_type": "309"
+}
