@@ -7,20 +7,37 @@ import TestSupport
 import Testing
 
 /// SimBridge stand-in: serves screens in order, moving to the next after every tap (and every key press with
-/// `advancingOnKeys`), and records input.
-final class FakeUI: InputInjecting, AccessibilityProviding, @unchecked Sendable {
+/// `advancingOnKeys`, every swipe with `advancingOnSwipes`), and records input.
+final class FakeUI: InputInjecting, AccessibilityProviding, GestureInjecting, MemoryWarningSending, @unchecked Sendable {
     private let lock = NSLock()
     private var screens: [UIElement]
     private let advancingOnKeys: Bool
+    private let advancingOnSwipes: Bool
     private(set) var taps: [CGPoint] = []
     private(set) var holds: [Duration] = []
     private(set) var swipes: [(CGPoint, CGPoint)] = []
     private(set) var strokes: [KeyStroke] = []
     private(set) var buttons: [HardwareButton] = []
+    private(set) var paths: [[TouchSample]] = []
+    private(set) var twoFingerPaths: [[TwoFingerSample]] = []
+    private(set) var memoryWarnings = 0
 
-    init(_ screens: UIElement..., advancingOnKeys: Bool = false) {
+    init(_ screens: UIElement..., advancingOnKeys: Bool = false, advancingOnSwipes: Bool = false) {
         self.screens = screens
         self.advancingOnKeys = advancingOnKeys
+        self.advancingOnSwipes = advancingOnSwipes
+    }
+
+    func touchPath(udid: String, _ samples: [TouchSample]) async throws {
+        lock.withLock { paths.append(samples) }
+    }
+
+    func twoFingerPath(udid: String, _ samples: [TwoFingerSample]) async throws {
+        lock.withLock { twoFingerPaths.append(samples) }
+    }
+
+    func sendMemoryWarning(udid: String, pid: Int?) async throws {
+        lock.withLock { memoryWarnings += 1 }
     }
 
     func tap(udid: String, at point: CGPoint, count: Int, hold: Duration) async throws {
@@ -32,7 +49,10 @@ final class FakeUI: InputInjecting, AccessibilityProviding, @unchecked Sendable 
     }
 
     func swipe(udid: String, from start: CGPoint, to end: CGPoint, duration: Duration) async throws {
-        lock.withLock { swipes.append((start, end)) }
+        lock.withLock {
+            swipes.append((start, end))
+            if advancingOnSwipes && screens.count > 1 { screens.removeFirst() }
+        }
     }
 
     func pressKeys(udid: String, _ strokes: [KeyStroke]) async throws {

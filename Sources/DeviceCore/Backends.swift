@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ProcessKit
 
 // Capabilities a backend can provide. `ToolRouter` looks a backend up via `CapabilityMatrix`
 // and casts it to the protocol the tool needs.
@@ -129,4 +130,119 @@ public protocol AccessibilityProviding: Sendable {
     func uiTree(udid: String, maxDepth: Int?) async throws -> UIElement
     /// The deepest element at the point, without children.
     func element(udid: String, at point: CGPoint) async throws -> UIElement?
+}
+
+// MARK: Lifecycle extras
+
+public protocol DeviceCloning: Sendable {
+    /// Copies a shut-down simulator with its apps and data; returns the UDID of the copy.
+    func clone(udid: String, name: String) async throws -> String
+}
+
+public protocol DeviceRenaming: Sendable {
+    func rename(udid: String, name: String) async throws
+}
+
+public protocol MemoryWarningSending: Sendable {
+    /// A simulator warns all of its apps at once and ignores `pid`; a physical device warns the process `pid`.
+    func sendMemoryWarning(udid: String, pid: Int?) async throws
+}
+
+// MARK: Background jobs
+
+/// Records the screen until the recorder gets SIGINT, then finishes the file.
+public protocol ScreenRecording: Sendable {
+    /// Extension of the files the recorder writes, e.g. "mov".
+    var videoFileExtension: String { get }
+    func recordingCommand(udid: String, path: String, codec: VideoCodec) -> BackgroundCommand
+}
+
+public protocol LogStreaming: Sendable {
+    /// Streams the device's log entries that pass the filter, one per line, until stopped.
+    func logStreamCommand(udid: String, filter: LogFilter) -> BackgroundCommand
+}
+
+public protocol LogQuerying: Sendable {
+    /// Log lines of the last `last`, oldest first.
+    func queryLogs(udid: String, filter: LogFilter, last: Duration) async throws -> [String]
+}
+
+public protocol ConsoleLaunching: Sendable {
+    /// Launches the app with its stdout and stderr as the command's output; the command ends with the app,
+    /// and stopping the command terminates the app.
+    func consoleCommand(udid: String, bundleId: String, options: LaunchOptions) -> BackgroundCommand
+}
+
+// MARK: Diagnostics
+
+public protocol CrashReportProviding: Sendable {
+    /// Diagnostic reports (.ips) of the device's processes, newest first.
+    func crashReports(udid: String) async throws -> [CrashReportEntry]
+    /// A report's contents; `name` as `crashReports` lists it.
+    func crashReport(udid: String, name: String) async throws -> Data
+}
+
+// MARK: App data
+
+public protocol ContainerFileAccessing: Sendable {
+    /// Entries under `subpath` (relative to the container root, "" for the root), `depth` levels down
+    /// (1: only the entries of `subpath`). Paths in the result are relative to the container.
+    func listFiles(udid: String, bundleId: String, container: AppContainer, subpath: String, depth: Int) async throws -> [ContainerFile]
+    /// Copies a file of the container to `destination` on the Mac.
+    func readFile(udid: String, bundleId: String, container: AppContainer, path: String, to destination: URL) async throws
+    /// Copies a file from the Mac into the container, creating directories as needed.
+    func writeFile(udid: String, bundleId: String, container: AppContainer, path: String, from source: URL) async throws
+}
+
+public protocol UserDefaultsReading: Sendable {
+    /// The app's preferences (`suite` nil) or a suite's, as a property list; an empty dictionary when none are set.
+    func userDefaults(udid: String, bundleId: String, suite: String?) async throws -> Data
+}
+
+public protocol UserDefaultsWriting: Sendable {
+    /// Sets `key` to `value` (an XML property list element such as `<integer>3</integer>`), or removes it when nil.
+    /// The running app sees the change.
+    func writeUserDefault(udid: String, bundleId: String, suite: String?, key: String, value: String?) async throws
+}
+
+public protocol KeychainManaging: Sendable {
+    /// `trustedRoot` adds the certificate to the trusted root store, so the system trusts what it signs.
+    func addCertificate(udid: String, path: String, trustedRoot: Bool) async throws
+    func resetKeychain(udid: String) async throws
+}
+
+// MARK: System extras
+
+public protocol LocaleConfiguring: Sendable {
+    func locale(udid: String) async throws -> DeviceLocale
+    /// Writes the non-nil fields; the device needs a reboot for the system UI to follow, apps a relaunch.
+    func setLocale(udid: String, languages: [String]?, locale: String?) async throws
+}
+
+public protocol ICloudSyncing: Sendable {
+    func syncICloud(udid: String) async throws
+}
+
+public protocol ShakeSimulating: Sendable {
+    func shake(udid: String) async throws
+}
+
+public protocol DarwinNotificationPosting: Sendable {
+    func postDarwinNotification(udid: String, name: String) async throws
+}
+
+public protocol ProcessSpawning: Sendable {
+    /// Runs an executable inside the simulator and returns its output; `executable` is a name on the simulator's
+    /// PATH or an absolute path.
+    func spawn(udid: String, executable: String, arguments: [String], timeout: Duration) async throws -> ProcessResult
+}
+
+// MARK: Gestures
+
+/// Touches beyond a single tap or straight swipe. Points are in the interface orientation.
+public protocol GestureInjecting: Sendable {
+    /// One finger: down at the first sample, moving through the others, up at the last.
+    func touchPath(udid: String, _ samples: [TouchSample]) async throws
+    /// Two fingers moving together, each sample placing both.
+    func twoFingerPath(udid: String, _ samples: [TwoFingerSample]) async throws
 }

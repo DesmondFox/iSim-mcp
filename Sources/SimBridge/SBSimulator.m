@@ -80,4 +80,17 @@ static SimDeviceSet *_Nullable SBDeviceSet(NSString *developerDir, NSError **err
     return [type respondsToSelector:@selector(productFamilyID)] ? type.productFamilyID : 1;
 }
 
+- (BOOL)simulateMemoryWarningWithError:(NSError **)error {
+    if (![self.device respondsToSelector:@selector(simulateMemoryWarning)]) {
+        if (error) *error = SBMakeError(SBErrorUnavailable, @"CoreSimulator cannot simulate memory warnings in this Xcode.");
+        return NO;
+    }
+    if (!self.isBooted) {
+        if (error) *error = SBMakeError(SBErrorNotBooted, [NSString stringWithFormat:@"Simulator %@ is not booted.", self.name]);
+        return NO;
+    }
+    [self.device simulateMemoryWarning];
+    return YES;
+}
+
 @end

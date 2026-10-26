@@ -15,13 +15,14 @@ struct AgentError: Error {
 ///   GET  /tree?max_depth=&bundle_id=   the frontmost app's UI tree
 ///   POST /tap     {x, y, count, hold_ms}
 ///   POST /swipe   {from_x, from_y, to_x, to_y, duration_ms}
+///   POST /path    {fingers: [[{x, y, t_ms}]]}   one or two fingers moving at once
 ///   POST /type    {text}
 ///   POST /keys    {keys: [{key, modifiers: [command|shift|option|control]}]}
 ///   POST /button  {name}
 ///   POST /stop
 final class Agent {
   /// Bumped whenever a request or reply changes; the host restarts an agent of another version.
-  static let protocolVersion = 1
+  static let protocolVersion = 2
   static let springboard = "com.apple.springboard"
   /// Enough for any real screen; a runaway tree (a huge collection view) is cut here.
   static let maxElements = 3000
@@ -70,6 +71,7 @@ final class Agent {
     case ("GET", "/tree"): return try tree(maxDepth: request.query["max_depth"].flatMap { Int($0) }, bundleID: request.query["bundle_id"])
     case ("POST", "/tap"): return try tap(body)
     case ("POST", "/swipe"): return try swipe(body)
+    case ("POST", "/path"): return try path(body)
     case ("POST", "/type"): return try type(body)
     case ("POST", "/keys"): return try keys(body)
     case ("POST", "/button"): return try button(body)
@@ -239,6 +241,28 @@ final class Agent {
       forDuration: 0.05, thenDragTo: Self.screenCoordinate(end),
       withVelocity: XCUIGestureVelocity(rawValue: distance / max(duration, 0.05)), thenHoldForDuration: 0)
     return ["method": "xcuitest"]
+  }
+
+  /// Fingers along paths of points at given times: drags, drawing, pinches, rotations. Public XCUITest has no
+  /// such gestures, so this needs the private event classes.
+  private func path(_ body: [String: Any]) throws -> [String: Any] {
+    settleKeyboard()
+    guard let fingers = body["fingers"] as? [[[String: Any]]], !fingers.isEmpty, fingers.allSatisfy({ !$0.isEmpty }) else {
+      throw AgentError(message: "fingers must be a non-empty list of point lists")
+    }
+    guard ISimXCT.canSynthesizeEvents else {
+      throw AgentError(message: "this Xcode's XCTest cannot synthesize touch paths", status: 501)
+    }
+    let paths = try fingers.map { points in
+      try points.map { point -> [String: Double] in
+        let location = try Self.point(point, "x", "y")
+        return ["x": location.x, "y": location.y, "t": Double(point["t_ms"] as? Int ?? 0) / 1000]
+      }
+    }
+    let orientation = try? frontmost().0
+    try ISimXCT.performTouchPaths(
+      paths, orientation: orientation.map(ISimXCT.interfaceOrientation(ofApplication:)) ?? .portrait)
+    return ["method": "synthesized"]
   }
 
   /// A point of the screen in points, measured from SpringBoard, which always spans it.

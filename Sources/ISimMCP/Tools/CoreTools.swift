@@ -102,6 +102,12 @@ enum CoreTools {
             }
         }
 
+        if let apns = context.apns {
+            report.ok("APNs key \(apns.keyID) of team \(apns.teamID): send_push mode=apns can send real pushes")
+        } else {
+            report.info("send_push mode=apns is off: start the server with --apns-key-path and --apns-key-id to send real pushes")
+        }
+
         return report.result
     }
 

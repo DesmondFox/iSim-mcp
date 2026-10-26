@@ -167,3 +167,21 @@ public struct BiometricEnrollment: Sendable, Equatable {
         self.enrolled = enrolled
     }
 }
+
+public enum VideoCodec: String, Sendable, CaseIterable {
+    case h264
+    case hevc
+}
+
+/// Language and region settings of a device.
+public struct DeviceLocale: Sendable, Equatable {
+    /// Preferred languages in order, e.g. ["de-DE", "en"].
+    public var languages: [String]
+    /// Region format, e.g. "de_DE".
+    public var locale: String?
+
+    public init(languages: [String], locale: String?) {
+        self.languages = languages
+        self.locale = locale
+    }
+}

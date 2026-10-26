@@ -106,20 +106,28 @@ struct ToolRegistryTests {
             "doctor", "set_active_device", "ui_agent",
             "list_devices", "boot_device", "shutdown_device", "reboot_device", "open_simulator_app", "list_runtimes",
             "create_device", "erase_device", "delete_device",
+            "clone_device", "rename_device",
             "list_apps", "get_app_info", "install_app", "uninstall_app", "launch_app", "terminate_app", "open_url",
-            "list_processes", "get_app_container",
-            "screenshot", "get_screen_info", "add_media",
+            "list_processes", "get_app_container", "send_memory_warning",
+            "screenshot", "get_screen_info", "start_recording", "stop_recording", "add_media",
             "describe_ui", "find_elements", "describe_point", "tap", "swipe", "type_text", "press_key", "press_button", "wait_for",
-            "handle_system_alert", "set_orientation",
+            "handle_system_alert", "set_orientation", "touch_path", "multi_touch", "scroll_until_visible", "shake",
         ])
+        #expect(names.count == 44)
     }
 
-    @Test func systemToolsetHoldsTheEnvironmentTools() {
-        let registry = ISimServer.makeRegistry(toolsets: [.system])
-        #expect(Set(registry.tools.map(\.name)).subtracting(["doctor", "set_active_device", "ui_agent"]) == [
+    @Test func optionalToolsetsHoldTheirTools() {
+        func names(_ toolset: Toolset) -> Set<String> {
+            Set(ISimServer.makeRegistry(toolsets: [toolset]).tools.map(\.name)).subtracting(["doctor", "set_active_device", "ui_agent"])
+        }
+        #expect(names(.system) == [
             "configure_ui", "set_permission", "set_location", "simulate_route", "override_status_bar", "biometrics",
-            "set_pasteboard", "get_pasteboard", "send_push",
+            "set_pasteboard", "get_pasteboard", "send_push", "set_locale", "icloud_sync",
         ])
+        #expect(names(.data) == ["list_container_files", "read_container_file", "write_container_file", "read_user_defaults", "write_user_defaults", "keychain"])
+        #expect(names(.logs) == ["start_log_capture", "read_log_capture", "stop_log_capture", "query_logs", "list_crash_reports", "get_crash_report"])
+        #expect(names(.advanced) == ["simctl_raw", "devicectl_raw", "post_darwin_notification", "spawn_process"])
+        #expect(ISimServer.allTools().count == 71)
     }
 
     @Test func toolNamesAreUnique() {
@@ -128,7 +136,11 @@ struct ToolRegistryTests {
     }
 
     @Test func everyDeviceToolHasTheDeviceParameterAndAnnotations() throws {
-        let deviceIndependent: Set = ["doctor", "list_devices", "list_runtimes", "create_device"]
+        // Job tools address a job, raw tools take the device among their arguments.
+        let deviceIndependent: Set = [
+            "doctor", "list_devices", "list_runtimes", "create_device", "stop_recording", "read_log_capture", "stop_log_capture",
+            "simctl_raw", "devicectl_raw",
+        ]
         for tool in ISimServer.makeRegistry(toolsets: Set(Toolset.allCases)).tools where !deviceIndependent.contains(tool.name) {
             let properties = try #require(tool.inputSchema.objectValue?["properties"]?.objectValue, "\(tool.name)")
             #expect(properties["device"] != nil, "\(tool.name) has no device parameter")
@@ -190,13 +202,23 @@ struct ToolRegistryTests {
     }
 
     @Test func simulatorOnlyToolsRefuseIPhoneBeforeRunningAnything() async throws {
-        let registry = ISimServer.makeRegistry(toolsets: [.devices, .system])
+        let registry = ISimServer.makeRegistry(toolsets: Set(Toolset.allCases))
         let calls: [(String, [String: Value])] = [
             ("override_status_bar", ["preset": "screenshot"]),
             ("biometrics", ["action": "match"]),
             ("set_permission", ["action": "grant", "service": "photos", "bundle_id": "com.example.demo"]),
-            ("send_push", ["bundle_id": "com.example.demo", "payload": ["aps": ["alert": "Hi"]]]),
+            ("send_push", ["bundle_id": "com.example.demo", "mode": "local", "payload": ["aps": ["alert": "Hi"]]]),
             ("erase_device", [:]),
+            ("clone_device", ["name": "Copy"]),
+            ("start_recording", [:]),
+            ("start_log_capture", ["bundle_id": "com.example.demo"]),
+            ("query_logs", ["process": "SpringBoard"]),
+            ("write_user_defaults", ["bundle_id": "com.example.demo", "key": "k", "value": 1]),
+            ("keychain", ["action": "reset"]),
+            ("set_locale", ["language": "de"]),
+            ("icloud_sync", [:]),
+            ("shake", [:]),
+            ("spawn_process", ["executable": "defaults"]),
         ]
         for (name, arguments) in calls {
             let result = try await registry.call(name, arguments: arguments.merging(["device": "PHONE-1"]) { $1 }, context: context)

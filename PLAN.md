@@ -105,7 +105,8 @@ iSim-mcp/
 │   ├── DevicectlBackend/    # обёртки над `xcrun devicectl` (JSON-вывод)
 │   ├── SimctlBackend/       # обёртки над `xcrun simctl`
 │   ├── SimBridge/           # ObjC: CoreSimulator + AXPT (Accessibility), XPC-клиент dtuhidd (ввод)
-│   ├── AgentClient/         # HTTP-клиент к агенту + usbmux-проброс порта на Swift
+│   ├── AgentBackend/        # сборка и запуск агента, HTTP-клиент + usbmux-проброс порта на Swift
+│   ├── APNsBackend/         # push через APNs: JWT ES256 (CryptoKit), HTTP/2 на URLSession
 │   ├── XcodeBuild/          # xcodebuild: build, build-for-testing, test-without-building, парсинг ошибок
 │   └── ProcessKit/          # async ProcessRunner: таймауты, отмена, стриминг вывода
 ├── Agent/                   # Xcode-проект агента
@@ -160,7 +161,10 @@ iSim-mcp/
 | Стереть устройство (`erase_device`) | `devicectl settings reset` существует, но это личный телефон — **намеренно не поддерживаем** | — |
 | Подмена статус-бара, симуляция Face ID / Touch ID | У iPhone нет CoreDevice-capabilities `Simulate Status Bar` и `Simulate Face ID` | — |
 | Язык и регион, keychain, добавление фото в галерею, shake | Нет механизма | — |
-| Полноценный стрим unified log | `devicectl` отдаёт только stdout/stderr запущенного приложения | `launch_app(capture_output)`; разовый `query_logs` через `log collect` (медленно) |
+| Unified log (`start_log_capture`, `query_logs`) | `devicectl` отдаёт только stdout/stderr запущенного приложения, `log collect --device-udid` требует root | `launch_app(capture_output)` |
+| Запись экрана | У iPhone нет CoreDevice-capability `Screen Recording` | `screenshot` |
+| Запись UserDefaults | Скопированный plist приложение не увидит: cfprefsd держит свой кэш | `launch_app(args: ["-key", "value"])` на один запуск |
+| Memory warning | `devicectl device process sendMemoryWarning` на iOS 27.0.1 отвечает `ENOENT` (тулз пробует и объясняет) | — |
 
 Всё остальное, включая весь ввод и инспекцию UI, на физическом устройстве будет.
 
@@ -222,7 +226,7 @@ iSim-mcp/
 | `terminate_app` | Остановить | `bundle_id` | S | D | 1 |
 | `open_url` | Deep link, universal link, http-ссылка | `url` | S | D | 1 |
 | `list_processes` | Запущенные процессы | `name_contains`, `apps_only`=true | S | D | 2 |
-| `send_memory_warning` | Послать memory warning процессу | `bundle_id` \| `pid` | D? | D | 5 |
+| `send_memory_warning` | Послать memory warning (на симуляторе — всем приложениям) | `bundle_id` \| `pid` | K | D | 5 |
 | `get_app_container` | Путь к контейнеру на диске Mac (на iPhone файлов на Mac нет, см. 5.7) | `bundle_id`, `kind` (app/data/groups/`<group-id>`) | S | — | 2 |
 
 ### 5.4 screen — экран и медиа
@@ -231,8 +235,8 @@ iSim-mcp/
 |---|---|---|---|---|---|
 | `screenshot` | Скриншот как MCP image + размер в pt, scale, ориентация | `format` (jpeg/png), `quality`, `max_dimension`=1024, `return` (image/path/both), `save_path`, `display` | S | D | 1 |
 | `get_screen_info` | Дисплеи, размер в pt/px, scale, ориентация | — | D | D | 2 |
-| `start_recording` | Начать запись видео → `job_id` | `path`, `codec` (h264/hevc) | S | D? | 5 |
-| `stop_recording` | Остановить, вернуть путь и длительность | `job_id` | S | D? | 5 |
+| `start_recording` | Начать запись видео → `job_id` | `path`, `codec` (h264/hevc) | S | — | 5 |
+| `stop_recording` | Остановить, вернуть путь и длительность | `job_id` | ✓ | — | 5 |
 | `add_media` | Фото, видео, контакты в библиотеку | `paths[]` | S | — | 2 |
 
 ### 5.5 ui — ввод и инспекция
@@ -243,8 +247,8 @@ iSim-mcp/
 |---|---|---|---|---|---|
 | `tap` | Тап по координатам **или** элементу. Двойной тап и long press — параметрами | `x`,`y` \| `element`, `count`=1, `duration_ms` | K | A | 3/4 |
 | `swipe` | Свайп/скролл между точками или по направлению | `from`,`to` \| `direction`+`element?`, `duration_ms` | K | A | 3/4 |
-| `touch_path` | Произвольный путь одним пальцем: drag & drop, рисование | `points[{x,y,dt_ms}]` | K | A? | 5 |
-| `multi_touch` | Жест двумя пальцами: pinch, rotate | `preset` (pinch_in/pinch_out/rotate)+`center`,`scale`,`angle` \| `points[]` (только сим) | K | A | 5 |
+| `touch_path` | Произвольный путь одним пальцем: drag & drop, рисование | `points[{x,y,dt_ms}]` | K | A | 5 |
+| `multi_touch` | Жест двумя пальцами: pinch, rotate (rotate — только iPhone) | `preset` (pinch_in/pinch_out/rotate)+`center` \| `element`, `scale`, `angle`, `radius` \| `points[{x1,y1,x2,y2,dt_ms}]` | K | A | 5 |
 | `type_text` | Ввести текст в элемент в фокусе | `text`, `method` (auto/hid/paste), `submit` | K,D | A | 3/4 |
 | `press_key` | Клавиша или сочетание: return, delete, tab, escape, стрелки, Cmd+A | `key` \| `hid_usage`, `modifiers[]`, `repeat` | K | A | 3/4 |
 | `press_button` | Аппаратная кнопка: home, lock, side, siri, volume_up/down | `button`, `duration_ms` | K | A? | 3/4 |
@@ -270,7 +274,7 @@ iSim-mcp/
 | `set_pasteboard` | Положить текст в буфер обмена | `text` | D | D | 2 |
 | `get_pasteboard` | Прочитать буфер обмена | — | D | D | 2 |
 | `send_push` | Push-уведомление. `local` — мгновенно через `simctl push`, без настроек (только симулятор, только обычные push, payload до 4 КБ). `apns` — настоящая отправка через APNs sandbox по device token: работает и на iPhone, и на симуляторе, поддерживает silent, VoIP и Live Activity | `bundle_id`, `payload` \| `payload_path`, `mode` (local/apns; по умолчанию local на симуляторе, apns на iPhone), `device_token` (для apns), `push_type` (alert/background/voip/liveactivity), `priority`, `collapse_id` | S,H | H | 2 / 5 |
-| `set_locale` | Язык и регион с перезапуском SpringBoard | `language`, `region` | S | — | 5 |
+| `set_locale` | Язык и регион с перезагрузкой симулятора | `language`, `region`, `languages[]` | S | — | 5 |
 | `icloud_sync` | Запустить синхронизацию iCloud | — | S | — | 5 |
 
 ### 5.7 data — данные приложения
@@ -288,10 +292,10 @@ iSim-mcp/
 
 | Тулз | Назначение | Ключевые параметры | Сим | Физ | Ф |
 |---|---|---|---|---|---|
-| `start_log_capture` | Стрим unified log в кольцевой буфер → `job_id`. На iPhone — только stdout/stderr приложения | `bundle_id` \| `process` \| `subsystem` \| `predicate`, `level` | S | D | 5 |
+| `start_log_capture` | Стрим unified log в джобу → `job_id`. На iPhone — `launch_app(capture_output)` | `bundle_id` \| `process` \| `subsystem` \| `predicate`, `level` | S | — | 5 |
 | `read_log_capture` | Новые строки с курсора, фильтр по подстроке. Читает и консоль из `launch_app(capture_output)` | `job_id`, `cursor`, `max_lines`, `grep` | ✓ | ✓ | 5 |
 | `stop_log_capture` | Остановить джобу | `job_id` | ✓ | ✓ | 5 |
-| `query_logs` | Разовый запрос логов за прошедшее время | `last` (напр. `5m`), `predicate` \| `bundle_id`, `max_lines` | S | H? | 5 |
+| `query_logs` | Разовый запрос логов за прошедшее время | `last` (напр. `5m`), `predicate` \| `bundle_id`, `max_lines`, `grep` | S | — | 5 |
 | `list_crash_reports` | Краш-репорты `.ips` | `bundle_id?`, `since?` | H | D | 5 |
 | `get_crash_report` | Исключение и стек упавшего потока | `id` | H | D | 5 |
 
@@ -301,7 +305,7 @@ iSim-mcp/
 |---|---|---|---|---|---|
 | `simctl_raw` | `simctl` с произвольными аргументами | `args[]`, `timeout_ms` | S | — | 5 |
 | `devicectl_raw` | `devicectl` с произвольными аргументами | `args[]`, `timeout_ms` | D | D | 5 |
-| `post_darwin_notification` | Отправить Darwin-нотификацию | `name` | D | D | 5 |
+| `post_darwin_notification` | Отправить Darwin-нотификацию | `name` | S | D | 5 |
 | `spawn_process` | Запустить бинарник внутри симулятора | `executable`, `args[]`, `timeout_ms` | S | — | 5 |
 
 ### 5.10 build — сборка проекта
@@ -425,9 +429,28 @@ iSim-mcp/
 - Открытый вопрос 4 (ввод через `remote.hid` без агента) отложен: дереву агент нужен всё равно, а тап через агента занимает 0,3 с.
 - Не проверялись: iPad, альбомная ориентация на iPhone, подключение по Wi-Fi, кнопки lock и громкости, многочасовая сессия (XCTest копит записи активностей).
 
-### Фаза 5 — логи, видео, данные, продвинутые жесты (3–4 дня)
+### Фаза 5 — логи, видео, данные, продвинутые жесты (3–4 дня) ✅ 23.10.2026
 
 - `JobManager`; логи, консоль приложения, видео; краши; `send_push` в режиме `apns`; файлы контейнера и UserDefaults; `touch_path`, `multi_touch`, `scroll_until_visible`, `shake`, `set_locale`, `keychain`, `icloud_sync`, `clone_device`, `rename_device`, `send_memory_warning`, `advanced`.
+
+**Итог:** проверено через MCP-клиент по stdio. На iPhone 16 Pro Simulator (iOS 27.0) и Lab-экране тестового приложения (`launch_app(args: ["-lab"])`): консоль приложения, стрим и запрос unified log, запись видео, drag через `touch_path`, pinch, shake, memory warning, чтение и запись UserDefaults с подхватом значения запущенным приложением, файлы контейнера, краш-репорт после падения, смена языка, `scroll_until_visible` до 35-й строки и до конца списка, Darwin-нотификация, `spawn_process`, raw-тулзы. На одноразовом iPhone 17: `rename_device`, `keychain` (корневой сертификат и сброс), `clone_device`, `icloud_sync`. Агент v2 на симуляторе: `touch_path` и pinch. На iPhone 14 Plus (iOS 27.0.1, по Wi-Fi): консоль приложения, файлы контейнера (запись и чтение), UserDefaults, Darwin-нотификация, краш-репорт агента из фазы 4 и понятные отказы тулзов, которых на iPhone нет. Время: старт и остановка записи 0,1–0,3 с, запуск с консолью ~1,6 с (из них 1 с — проверка, что запуск не упал), `query_logs` за минуту ~1,4 с, pinch 0,8 с, `set_locale` 6–7 с, файл контейнера на iPhone 0,5–0,6 с. 27 новых тулзов (всего 71 без фазы 6, в наборе по умолчанию 44), 257 unit-тестов. Что отличается от плана:
+- **Джобы** (`JobManager`, actor в DeviceCore): у каждой свой файл вывода в `~/Library/Caches/iSim-mcp/jobs` вместо кольцевого буфера, курсор — смещение в байтах. Чтение без курсора продолжает с места прошлого чтения, неполная последняя строка ждёт, пока джоба жива, `grep` считает пропущенные строки. Служебные строки CLI (`getpwuid_r…`, заголовок `log`, предупреждение рантайма `objc[…]: Class … is implemented in both`, которое симулятор с включённым AX печатает в stderr каждого приложения) отбрасываются регулярками. Запись останавливается SIGINT, остальное — SIGTERM. Все джобы гасятся при выходе сервера, в том числе по SIGTERM и SIGINT, и запись успевает дописать файл.
+- **Консоль приложения.** На симуляторе `simctl launch --console-pty`: через терминал приложение сбрасывает каждую строку `print`, через pipe — только когда заполнится буфер. Строка simctl «bundle: pid» доходит лишь при выходе (stdout simctl — файл), поэтому pid берётся из `launchctl list`, а `launch_app` секунду проверяет, что запуск не упал. На iPhone `devicectl --quiet device process launch --console`: в выводе только stdout/stderr приложения. Остановка джобы завершает приложение — сигнал пересылается ему.
+- **Unified log только на симуляторе:** `log stream`/`log show` через `simctl spawn`, предикат по процессу (`CFBundleExecutable`) или подсистеме, равной bundle id; без фильтра стрим не запускается (тысячи строк в секунду). `log show` без `--info --debug` пропускает info и debug. На iPhone `log collect --device-udid` требует root, поэтому `start_log_capture` и `query_logs` там недоступны и отсылают к `launch_app(capture_output)`.
+- **Видео:** `simctl io recordVideo` пишет QuickTime при любом расширении, старт ждёт «Recording started». У iPhone нет capability `Screen Recording`; `devicectl capture screen-record` работает только для симуляторов и не нужен.
+- **Краш-репорты.** Отчёты симуляторных приложений лежат на Mac в `~/Library/Logs/DiagnosticReports`; свои отбираются по `platform: 7` и UDID в теле (слэши в `.ips` экранированы, `\/`). На iPhone — `devicectl device info files --domain-type systemCrashLogs` (только имена, процесс и вид отчёта — по имени файла) и `copy from`. Без `include_other` видны только краши, без jetsam, resource и stackshot. `get_crash_report` показывает исключение, причину завершения, `asi` (сообщения Swift runtime и NSException), last exception backtrace и стек упавшего потока.
+- **Memory warning.** `devicectl sendMemoryWarning` на симуляторе отвечает успехом, но приложение ничего не получает; работает `-[SimDevice simulateMemoryWarning]` из CoreSimulator (SimBridge), предупреждение получают все приложения. На iPhone `devicectl` для запущенной debug-сборки отвечает `NSPOSIXErrorDomain error 2`; тулз пробует и объясняет.
+- **Два пальца на симуляторе:** `IndigoDigitizerEvent` с `pointTwo` (как в idb). Без пауз между событиями жест не распознаётся, с паузой в кадр (16 мс) pinch точный (зум 2,00 при ×2). Поворот до приложений не доходит: SwiftUI получает угол `nan` или 0, и через SimBridge, и через агента, а несимметричный поворот не распознаётся вовсе, поэтому `multi_touch(rotate)` на симуляторе отказывает с объяснением. На агенте — эндпоинт `/path` (протокол v2): по `XCPointerEventPath` на палец в одном `XCSynthesizedEventRecord`. `touch_path` и пресеты добавляют точки через кадр между заданными.
+- `scroll_until_visible` сравнивает экраны по составу элементов без рамок: на конце список пружинит, и рамки между чтениями ещё двигаются.
+- **shake** — Darwin-нотификация `com.apple.UIKit.SimulatorShake` через `notifyutil` внутри симулятора. `post_darwin_notification` на симуляторе идёт так же: у `devicectl` нет для них capability `Post Darwin Notification`.
+- **set_locale** пишет `AppleLanguages` и `AppleLocale` в глобальный домен и перезагружает симулятор (5–7 с) вместо перезапуска SpringBoard: после смены языка с одним перезапуском SpringBoard AX-деревья приложений не читались до перезагрузки.
+- **UserDefaults на симуляторе** — `defaults write`/`export`/`delete` через `simctl spawn` по пути к plist в контейнере: так запись идёт через cfprefsd симулятора, и запущенное приложение видит значение сразу. Значение — JSON, превращается в элемент XML plist (`<dict>…</dict>`), `type` уточняет тип; suite `group.*` читается из контейнера группы. На iPhone чтение — копия plist (может отставать от только что записанного), запись недоступна.
+- **Файлы контейнера:** на симуляторе — файловая система Mac (у `devicectl` нет `List Files` для симуляторов), на iPhone — `devicectl device info files`/`copy from`/`copy to` (имена в листинге — относительно `--subdirectory`, `copy to` сам создаёт папки). Пути относительные, `..` запрещён. `read_container_file` отдаёт plist как JSON, текст, PNG и JPEG картинкой, остальное base64, для SQLite предлагает `save_path`.
+- `clone_device`: simctl клонирует только выключенный симулятор; `shutdown: true` выключает, клонирует и загружает обратно (~9 с).
+- **APNs** — отдельный таргет `APNsBackend`: JWT ES256 на CryptoKit (кэш 50 минут), HTTP/2 через URLSession, ключ — флаги `--apns-key-path`, `--apns-key-id` и `--team-id` или переменные окружения. Причины отказа APNs (`BadDeviceToken`, `DeviceTokenNotForTopic`, `InvalidProviderToken`…) переводятся в подсказки. `send_push` без явного `mode` идёт в APNs на iPhone и в `simctl push` на симуляторе. `doctor` показывает, настроен ли ключ.
+- Тестовое приложение получило Lab-экран (`-lab`): drag, pinch и rotate, shake, memory warning, UserDefaults, локаль, логи в stdout и unified log, кнопка краша, файл в Documents.
+- Попутно: в описаниях шести тулзов `system` были буквальные обратный слэш и перевод строки (`\\` в конце строк многострочного литерала).
+- Не проверялись: жесты через агента на iPhone и `rotate` где бы то ни было — iPhone был подключён по Wi-Fi, а соединение с агентом по Wi-Fi не устанавливается, сервер перезапускает агента по кругу (агент проверялся в фазе 4 только по USB); настоящая отправка через APNs (нет ключа); `icloud_sync` без Apple Account отвечает `BRCloudDocsErrorDomain error 153`; `rename_device` на iPhone (личный телефон).
 
 ### Фаза 6 — сборка проекта и полировка (2–3 дня)
 

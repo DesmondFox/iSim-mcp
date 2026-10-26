@@ -23,6 +23,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)sendAccessibilityRequestAsync:(id)request
                       completionQueue:(dispatch_queue_t)queue
                     completionHandler:(void (^)(id _Nullable response))handler;
+- (void)simulateMemoryWarning;
 @end
 
 @interface SimDeviceSet : NSObject

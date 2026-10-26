@@ -130,7 +130,7 @@ public struct ProcessRunner: ProcessRunning {
 }
 
 /// A child that runs until told to stop, its output appended to a log file: the UI agent's
-/// `xcodebuild test-without-building`.
+/// `xcodebuild test-without-building`, log streams, app consoles, screen recordings.
 public protocol BackgroundProcess: AnyObject, Sendable {
     var pid: Int32 { get }
     var isRunning: Bool { get }
@@ -138,6 +138,8 @@ public protocol BackgroundProcess: AnyObject, Sendable {
     func waitForExit() async -> Int32
     /// SIGTERM to the child's process group, SIGKILL after a grace period.
     func terminate()
+    /// SIGINT, as Ctrl+C would: recorders finish their file and exit on it.
+    func interrupt()
 }
 
 public protocol BackgroundLaunching: Sendable {
@@ -186,6 +188,8 @@ private final class LoggedProcess: BackgroundProcess, @unchecked Sendable {
     func waitForExit() async -> Int32 { await child.waitForExit() }
 
     func terminate() { child.terminate(timedOut: false) }
+
+    func interrupt() { child.interrupt() }
 }
 
 extension Duration {
@@ -287,6 +291,11 @@ private final class ChildProcess: @unchecked Sendable {
             // The group outlives its leader while any member is alive.
             if kill(-pid, 0) == 0 { kill(-pid, SIGKILL) }
         }
+    }
+
+    func interrupt() {
+        let pid: pid_t? = lock.withLock { exitStatus == nil && process.isRunning ? process.processIdentifier : nil }
+        if let pid { kill(pid, SIGINT) }
     }
 
     private func finish(_ status: Int32) {
