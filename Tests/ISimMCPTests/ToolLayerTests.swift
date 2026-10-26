@@ -211,8 +211,6 @@ struct ToolRegistryTests {
             ("erase_device", [:]),
             ("clone_device", ["name": "Copy"]),
             ("start_recording", [:]),
-            ("start_log_capture", ["bundle_id": "com.example.demo"]),
-            ("query_logs", ["process": "SpringBoard"]),
             ("write_user_defaults", ["bundle_id": "com.example.demo", "key": "k", "value": 1]),
             ("keychain", ["action": "reset"]),
             ("set_locale", ["language": "de"]),

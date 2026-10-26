@@ -95,6 +95,36 @@ struct LogAndDataToolTests {
         #expect(none.isError == true)
     }
 
+    @Test func capturesAnIPhoneAppsLogWithoutRelaunchingIt() async throws {
+        runner.on("device info apps --device PHONE-1", stdout: """
+            {"info": {"outcome": "success"}, "result": {"apps": [
+              {"bundleIdentifier": "dev.x", "name": "X", "builtByDeveloper": true,
+               "url": "file:///private/var/containers/Bundle/Application/A845C876/Runner.app/"}
+            ]}}
+            """)
+        let launcher = ScriptLauncher(#"echo 'isim-mcp: streaming the unified log of "Test iPhone" (USB)'; "#
+            + "echo '2026-10-26 16:48:50.629 I  Runner[14510:4a6c96] [dev.x:lab] hello from x'; sleep 5")
+        let context = context(launcher: launcher)
+        let start = try await call("start_log_capture", ["bundle_id": "dev.x"], context, device: "PHONE-1")
+        #expect(text(start).hasPrefix("Capturing the unified log of dev.x on \"Test iPhone\" (level debug) as job log-1."))
+        let command = try #require(launcher.commands.first)
+        #expect(command.dropFirst() == ["device-log", "--udid", "PHONE-1", "--bundle-id", "dev.x", "--executable", "Runner", "--level", "debug"])
+        #expect(!runner.calls.contains { $0.commandLine.contains("process launch") })
+
+        try await Task.sleep(for: .milliseconds(300))
+        let read = try await call("read_log_capture", [:], context, device: nil)
+        #expect(text(read).hasPrefix("2026-10-26 16:48:50.629 I  Runner[14510:4a6c96] [dev.x:lab] hello from x\n— log-1"))
+        await context.jobs.stopAll()
+    }
+
+    @Test func queriesAnIPhonesLogArchive() async throws {
+        runner.on("device-log --udid PHONE-1 --archive")
+        runner.on("show --archive", stdout: "2026-10-26 16:49:42.044 F  audiomxd[8769:4a6166] [com.apple.defaults:User Defaults] fault\n")
+        let result = try await call("query_logs", ["predicate": #"logType == "fault""#, "last": "2m"], context(), device: "PHONE-1")
+        #expect(text(result) == "1 entry of the predicate in the last 2m:\n2026-10-26 16:49:42.044 F  audiomxd[8769:4a6166] [com.apple.defaults:User Defaults] fault")
+        #expect(runner.calls.last?.commandLine.hasSuffix(#"--last 120s --info --debug --predicate (logType == "fault")"#) == true)
+    }
+
     @Test func logCaptureNeedsAFilter() async throws {
         let result = try await call("start_log_capture", [:], context(launcher: ScriptLauncher("true")))
         #expect(text(result).hasPrefix("Pass bundle_id, process, subsystem or predicate"))

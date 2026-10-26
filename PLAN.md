@@ -107,6 +107,8 @@ iSim-mcp/
 │   ├── SimBridge/           # ObjC: CoreSimulator + AXPT (Accessibility), XPC-клиент dtuhidd (ввод)
 │   ├── AgentBackend/        # сборка и запуск агента, HTTP-клиент + usbmux-проброс порта на Swift
 │   ├── APNsBackend/         # push через APNs: JWT ES256 (CryptoKit), HTTP/2 на URLSession
+│   ├── LockdownBackend/     # unified log iPhone: usbmuxd, pair record, TLS с lockdownd, os_trace_relay
+│   ├── LogPredicate/        # ObjC: NSPredicate без исключений — фильтр записей iPhone на Mac
 │   ├── XcodeBuild/          # xcodebuild: build, build-for-testing, test-without-building, парсинг ошибок
 │   └── ProcessKit/          # async ProcessRunner: таймауты, отмена, стриминг вывода
 ├── Agent/                   # Xcode-проект агента
@@ -188,7 +190,7 @@ iSim-mcp/
 
 ## 5. Каталог тулзов
 
-Колонки **Сим** и **Физ** показывают бэкенд на симуляторе и на физическом устройстве: `D` — devicectl, `S` — simctl, `K` — SimBridge, `A` — ISimAgent, `H` — хост (файлы/процессы macOS), `X` — xcodebuild, `✓` — бэкенд не нужен, `—` — не поддерживается, `?` — команда есть, но работу на этом виде устройства нужно проверить. **Ф** — фаза (раздел 6). ⚠️ — разрушительная операция. Необязательный параметр `device` есть у всех тулзов, работающих с устройством, и в таблицах не повторяется.
+Колонки **Сим** и **Физ** показывают бэкенд на симуляторе и на физическом устройстве: `D` — devicectl, `S` — simctl, `K` — SimBridge, `A` — ISimAgent, `L` — сервисы lockdownd на iPhone через usbmuxd (`os_trace_relay`), `H` — хост (файлы/процессы macOS), `X` — xcodebuild, `✓` — бэкенд не нужен, `—` — не поддерживается, `?` — команда есть, но работу на этом виде устройства нужно проверить. **Ф** — фаза (раздел 6). ⚠️ — разрушительная операция. Необязательный параметр `device` есть у всех тулзов, работающих с устройством, и в таблицах не повторяется.
 
 ### 5.1 core — всегда включено
 
@@ -292,12 +294,23 @@ iSim-mcp/
 
 | Тулз | Назначение | Ключевые параметры | Сим | Физ | Ф |
 |---|---|---|---|---|---|
-| `start_log_capture` | Стрим unified log в джобу → `job_id`. На iPhone — `launch_app(capture_output)` | `bundle_id` \| `process` \| `subsystem` \| `predicate`, `level` | S | — | 5 |
+| `start_log_capture` | Стрим unified log в джобу → `job_id`; запущенное приложение не перезапускается. iPhone — только по USB | `bundle_id` \| `process` \| `subsystem` \| `predicate`, `level` | S | L | 5 |
 | `read_log_capture` | Новые строки с курсора, фильтр по подстроке. Читает и консоль из `launch_app(capture_output)` | `job_id`, `cursor`, `max_lines`, `grep` | ✓ | ✓ | 5 |
 | `stop_log_capture` | Остановить джобу | `job_id` | ✓ | ✓ | 5 |
-| `query_logs` | Разовый запрос логов за прошедшее время | `last` (напр. `5m`), `predicate` \| `bundle_id`, `max_lines`, `grep` | S | — | 5 |
+| `query_logs` | Разовый запрос логов за прошедшее время. На iPhone — через архив логов устройства (~230 МБ, ~10 с по USB) | `last` (напр. `5m`), `predicate` \| `bundle_id`, `max_lines`, `grep` | S | L | 5 |
 | `list_crash_reports` | Краш-репорты `.ips` | `bundle_id?`, `since?` | H | D | 5 |
 | `get_crash_report` | Исключение и стек упавшего потока | `id` | H | D | 5 |
+
+**Unified log на iPhone без root** (после фазы 5). `log collect --device-udid` требует root, но тот же лог отдаёт lockdown-сервис `com.apple.os_trace_relay` — источник Console.app:
+- usbmuxd (`/var/run/usbmuxd`) по `ReadPairRecord` отдаёт пользователю pair record: HostID, SystemBUID, сертификат и ключ хоста (PKCS#8). Root не нужен, в отличие от чтения `/var/db/lockdown`.
+- `Connect` к порту 62078 → lockdownd: `StartSession` с HostID и SystemBUID, дальше TLS 1.2 с сертификатом хоста. TLS поверх уже открытого сокета — CFStream (`kCFStreamPropertySSLSettings`), без устаревшего SecureTransport. `SecIdentity` из сертификата и ключа в памяти собирает `SecIdentityCreate` из Security.framework (через `dlsym`: публичный API строит identity только из связки ключей).
+- `StartService com.apple.os_trace_relay` (сервис тоже просит TLS) → `StartActivity` с `Pid: -1`, то есть все процессы. Ответ — `0x01`, длина big-endian, plist со `Status`; дальше записи: `0x02`, длина little-endian, запись. В записи pid, время, уровень, тип (лог или activity), thread id, путь процесса, путь отправителя, уже отформатированное сообщение (`<private>`, как в Console), subsystem и category. Раскладку нашли по дампу; она совпадает с той, что читает pymobiledevice3. RemoteXPC-туннель для этого не нужен (iOS 27.0.1).
+- Фильтр работает на Mac: тот же `LogFilter`, что на симуляторе. Предикат вычисляет `NSPredicate` по полям записи с именами из `log`: `composedMessage` (и старое `eventMessage`), `process`, `processImagePath`, `processIdentifier`, `sender`, `subsystem`, `category`, `logType` (и `messageType`). Исключения `NSPredicate` — неверный синтаксис, CONTAINS по числу — ловит ObjC-таргет `LogPredicate`. Строки печатаются в формате `log --style compact`, как на симуляторе.
+- С устройством разговаривает дочерний процесс `isim-mcp device-log` (подкоманда не видна в `--help`): `JobManager` запускает его как `log stream` на симуляторе, а зависшее соединение не блокирует сервер.
+- `query_logs`: `CreateArchive` со `StartTime` → tar с `.logarchive` (`0x03`, длина little-endian, кусок) → `tar -x` → `log show --archive`. `StartTime` отсекает только trace-файлы, а форматные строки shared cache (`dsc`, ~180 МБ) приходят всегда, поэтому запрос стоит ~230 МБ и 9–12 с по USB.
+- **По Wi-Fi не работает.** usbmuxd видит iPhone только по USB. В паре с Xcode по сети iOS 17+ ходит через CoreDevice (RemotePairing, туннель `utun`): телефон объявляет `_remotepairing._tcp`, а не `_apple-mobdev2._tcp`, по которому usbmuxd находит сетевые устройства. Этим же объясняется, почему агент в фазе 5 не подключался по Wi-Fi. Путь по Wi-Fi — RSD через туннель CoreDevice (`com.apple.os_trace_relay.shim.remote`); не делали: порт RSD в туннеле не стандартный 58783, его надо узнавать у CoreDevice. Синхронизация с Finder по Wi-Fi («Show this iPhone when on Wi-Fi») должна вернуть телефон в usbmuxd — не проверяли.
+
+**Итог:** проверено через MCP-клиент по stdio на iPhone 14 Plus (iOS 27.0.1, USB) с тестовым приложением, запущенным заранее (pid 14510): `start_log_capture(bundle_id)` за 0,4 с; `Logger` приложения (`[dev.isimmcp.testapp:lab] drag 1 moves…`) пришёл в `read_log_capture` через 9 минут непрерывного стрима, pid до и после тот же. Нефильтрованный стрим — ~3000 строк за 4 с. `query_logs(bundle_id, last: 10m)` нашёл строку `lab opened` за 11,8 с, `query_logs(predicate: logType == "fault")` — 9,3 с; временный архив удаляется. Без кабеля `start_log_capture` сразу отвечает, что usbmuxd не видит iPhone. 276 unit-тестов.
 
 ### 5.9 advanced — выключено по умолчанию
 
@@ -436,7 +449,7 @@ iSim-mcp/
 **Итог:** проверено через MCP-клиент по stdio. На iPhone 16 Pro Simulator (iOS 27.0) и Lab-экране тестового приложения (`launch_app(args: ["-lab"])`): консоль приложения, стрим и запрос unified log, запись видео, drag через `touch_path`, pinch, shake, memory warning, чтение и запись UserDefaults с подхватом значения запущенным приложением, файлы контейнера, краш-репорт после падения, смена языка, `scroll_until_visible` до 35-й строки и до конца списка, Darwin-нотификация, `spawn_process`, raw-тулзы. На одноразовом iPhone 17: `rename_device`, `keychain` (корневой сертификат и сброс), `clone_device`, `icloud_sync`. Агент v2 на симуляторе: `touch_path` и pinch. На iPhone 14 Plus (iOS 27.0.1, по Wi-Fi): консоль приложения, файлы контейнера (запись и чтение), UserDefaults, Darwin-нотификация, краш-репорт агента из фазы 4 и понятные отказы тулзов, которых на iPhone нет. Время: старт и остановка записи 0,1–0,3 с, запуск с консолью ~1,6 с (из них 1 с — проверка, что запуск не упал), `query_logs` за минуту ~1,4 с, pinch 0,8 с, `set_locale` 6–7 с, файл контейнера на iPhone 0,5–0,6 с. 27 новых тулзов (всего 71 без фазы 6, в наборе по умолчанию 44), 257 unit-тестов. Что отличается от плана:
 - **Джобы** (`JobManager`, actor в DeviceCore): у каждой свой файл вывода в `~/Library/Caches/iSim-mcp/jobs` вместо кольцевого буфера, курсор — смещение в байтах. Чтение без курсора продолжает с места прошлого чтения, неполная последняя строка ждёт, пока джоба жива, `grep` считает пропущенные строки. Служебные строки CLI (`getpwuid_r…`, заголовок `log`, предупреждение рантайма `objc[…]: Class … is implemented in both`, которое симулятор с включённым AX печатает в stderr каждого приложения) отбрасываются регулярками. Запись останавливается SIGINT, остальное — SIGTERM. Все джобы гасятся при выходе сервера, в том числе по SIGTERM и SIGINT, и запись успевает дописать файл.
 - **Консоль приложения.** На симуляторе `simctl launch --console-pty`: через терминал приложение сбрасывает каждую строку `print`, через pipe — только когда заполнится буфер. Строка simctl «bundle: pid» доходит лишь при выходе (stdout simctl — файл), поэтому pid берётся из `launchctl list`, а `launch_app` секунду проверяет, что запуск не упал. На iPhone `devicectl --quiet device process launch --console`: в выводе только stdout/stderr приложения. Остановка джобы завершает приложение — сигнал пересылается ему.
-- **Unified log только на симуляторе:** `log stream`/`log show` через `simctl spawn`, предикат по процессу (`CFBundleExecutable`) или подсистеме, равной bundle id; без фильтра стрим не запускается (тысячи строк в секунду). `log show` без `--info --debug` пропускает info и debug. На iPhone `log collect --device-udid` требует root, поэтому `start_log_capture` и `query_logs` там недоступны и отсылают к `launch_app(capture_output)`.
+- **Unified log только на симуляторе:** `log stream`/`log show` через `simctl spawn`, предикат по процессу (`CFBundleExecutable`) или подсистеме, равной bundle id; без фильтра стрим не запускается (тысячи строк в секунду). `log show` без `--info --debug` пропускает info и debug. На iPhone `log collect --device-udid` требует root, поэтому `start_log_capture` и `query_logs` там недоступны и отсылают к `launch_app(capture_output)`. Позже сделано без root через `os_trace_relay`, см. 5.8.
 - **Видео:** `simctl io recordVideo` пишет QuickTime при любом расширении, старт ждёт «Recording started». У iPhone нет capability `Screen Recording`; `devicectl capture screen-record` работает только для симуляторов и не нужен.
 - **Краш-репорты.** Отчёты симуляторных приложений лежат на Mac в `~/Library/Logs/DiagnosticReports`; свои отбираются по `platform: 7` и UDID в теле (слэши в `.ips` экранированы, `\/`). На iPhone — `devicectl device info files --domain-type systemCrashLogs` (только имена, процесс и вид отчёта — по имени файла) и `copy from`. Без `include_other` видны только краши, без jetsam, resource и stackshot. `get_crash_report` показывает исключение, причину завершения, `asi` (сообщения Swift runtime и NSException), last exception backtrace и стек упавшего потока.
 - **Memory warning.** `devicectl sendMemoryWarning` на симуляторе отвечает успехом, но приложение ничего не получает; работает `-[SimDevice simulateMemoryWarning]` из CoreSimulator (SimBridge), предупреждение получают все приложения. На iPhone `devicectl` для запущенной debug-сборки отвечает `NSPOSIXErrorDomain error 2`; тулз пробует и объясняет.
@@ -472,12 +485,13 @@ iSim-mcp/
 | AX-дерево неполное (кастомные view без accessibility, Canvas, игры) | Можно вернуться к координатам со скриншота; `describe_point` для проверки |
 | Кириллица не набирается через HID на симуляторе | Режим `paste`: `devicectl device pasteboard copy` + Cmd+V |
 | Приложение запущено, пока в симуляторе был выключен `ApplicationAccessibilityEnabled` (например, после прогона XCUITest), и не отдаёт AX-дерево | Сервер включает флаг при загрузке, запуске приложений и первом UI-тулзе; ошибка просит перезапустить приложение через `launch_app` |
+| Формат записей `os_trace_relay` и `SecIdentityCreate` не документированы | Разбор в одном месте (`OSTraceEntry`) с фикстурой с реального iPhone: битая запись пропускается, пропавший символ даёт понятную ошибку. Стрим идёт в отдельном процессе |
 | Тяжёлые ответы (картинки, деревья, логи) | Ресайз и JPEG, компактный формат, курсоры и лимиты |
 | Зависшие процессы `simctl`/`devicectl`/`xcodebuild` | Таймауты, отмена, `JobManager` гасит всё при выходе |
 
 ## 8. Тестирование
 
-- **Unit:** `DeviceResolver`, `CapabilityMatrix`/`ToolRouter`, парсинг JSON `simctl`/`devicectl` по фикстурам, построение аргументов команд, форматтер AX-дерева, сообщения `dtuhidd`, протокол usbmux, парсер ошибок `xcodebuild`. Процессы мокаются через протокол `ProcessRunning`.
+- **Unit:** `DeviceResolver`, `CapabilityMatrix`/`ToolRouter`, парсинг JSON `simctl`/`devicectl` по фикстурам, построение аргументов команд, форматтер AX-дерева, сообщения `dtuhidd`, протокол usbmux, lockdown и `os_trace_relay` (фикстура с iPhone), парсер ошибок `xcodebuild`. Процессы мокаются через протокол `ProcessRunning`.
 - **Интеграционные, симулятор** (`ISIM_INTEGRATION=sim`): одноразовый симулятор, сценарии на Settings.app и тестовом приложении из `Tests/Fixtures`, в конце удаление.
 - **Интеграционные, iPhone** (`ISIM_INTEGRATION=device`, `ISIM_TEAM_ID=…`): только неразрушающие сценарии — установка тестового приложения, UI-сценарий, удаление тестового приложения.
 - **Ручные:** MCP Inspector (`npx @modelcontextprotocol/inspector ~/.local/bin/isim-mcp`) и живой прогон из Claude Code.
@@ -485,6 +499,6 @@ iSim-mcp/
 ## 9. Открытые вопросы
 
 1. ~~Какой Apple Developer аккаунт будет подписывать агента?~~ Решено: Personal Team (бесплатный Apple ID), `-allowProvisioningUpdates`, профили на 7 дней.
-2. ~~iPhone будет подключён по USB или по Wi-Fi?~~ Сейчас USB; Wi-Fi поддерживаем, но с переподключением.
+2. ~~iPhone будет подключён по USB или по Wi-Fi?~~ Сейчас USB; Wi-Fi поддерживаем, но с переподключением. usbmuxd не видит iPhone, который Xcode подключил по сети, поэтому агент и unified log iPhone работают только по USB (см. 5.8).
 3. Есть ли у приложения APNs-ключ (`.p8`) и логирует ли debug-сборка device token? Без ключа push на iPhone не отправить; на симуляторе хватит режима `local`.
 4. Ввод на iPhone без агента? iPhone объявляет CoreDevice-фичи `remote.hid.{digitizer,button,keyboard}` — тот же механизм, что `dtuhidd` в симуляторе. Если до них можно достучаться с хоста (RemoteXPC через туннель CoreDevice), тапы и текст на iPhone не требуют XCUITest; AX-дерево всё равно остаётся за агентом. Отложено в фазе 4: агент синтезирует тап за 0,3 с, а дерево без него не прочитать. Вернуться, если понадобится ввод без сборки и подписи агента.
