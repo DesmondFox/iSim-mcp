@@ -24,6 +24,8 @@ NS_ASSUME_NONNULL_BEGIN
                       completionQueue:(dispatch_queue_t)queue
                     completionHandler:(void (^)(id _Nullable response))handler;
 - (void)simulateMemoryWarning;
+/// `keyboardType` is a Mac keyboard type (LMGetKbdType), which tells ANSI, ISO and JIS apart.
+- (BOOL)setHardwareKeyboardEnabled:(BOOL)enabled keyboardType:(uint8_t)keyboardType error:(NSError **)error;
 @end
 
 @interface SimDeviceSet : NSObject

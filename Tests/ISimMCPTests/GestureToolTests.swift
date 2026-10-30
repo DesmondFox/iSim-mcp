@@ -113,4 +113,12 @@ struct GestureToolTests {
         #expect(text(result) == "Sent a memory warning to every app on \"iPhone 16 Pro\".")
         #expect(ui.memoryWarnings == 1)
     }
+
+    @Test func hardwareKeyboardAloneLeavesTheAppearanceAlone() async throws {
+        let ui = FakeUI(screen())
+        let result = try await call("configure_ui", ["hardware_keyboard": false], ui: ui)
+        #expect(text(result) == "Disconnected the hardware keyboard from \"iPhone 16 Pro\": the software keyboard shows while a field has focus.")
+        #expect(ui.hardwareKeyboard == [false])
+        #expect(!runner.calls.contains { $0.commandLine.contains("appearance") })
+    }
 }

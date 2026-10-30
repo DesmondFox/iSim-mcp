@@ -5,7 +5,7 @@ import SimBridge
 
 /// Input and UI inspection on simulators through private APIs (spike 0A): HID events go to `dtuhidd`
 /// inside the simulator, the UI tree comes from AccessibilityPlatformTranslation over CoreSimulator.
-public struct SimBridgeBackend: InputInjecting, AccessibilityProviding, GestureInjecting, MemoryWarningSending {
+public struct SimBridgeBackend: InputInjecting, AccessibilityProviding, GestureInjecting, MemoryWarningSending, HardwareKeyboardConnecting {
     /// Enough for any real screen; a runaway tree (a huge collection view) is cut here.
     public static let maxElements = 3000
     static let treeTimeout: TimeInterval = 15
@@ -57,6 +57,15 @@ public struct SimBridgeBackend: InputInjecting, AccessibilityProviding, GestureI
         let simulator = try await state.simulator(udid: udid, developerDir: try developerDirectory())
         do {
             try simulator.simulateMemoryWarning()
+        } catch {
+            throw Self.translate(error)
+        }
+    }
+
+    public func setHardwareKeyboard(udid: String, connected: Bool) async throws {
+        let simulator = try await state.simulator(udid: udid, developerDir: try developerDirectory())
+        do {
+            try simulator.setHardwareKeyboardConnected(connected)
         } catch {
             throw Self.translate(error)
         }

@@ -279,6 +279,15 @@ struct ToolRegistryTests {
         #expect(!runner.calls.contains { $0.commandLine.contains("settings appearance") })
     }
 
+    @Test func hardwareKeyboardOnAnIPhoneIsRefusedBeforeAnythingChanges() async throws {
+        let result = try await ISimServer.makeRegistry(toolsets: [.system])
+            .call("configure_ui", arguments: ["device": "PHONE-1", "appearance": "dark", "hardware_keyboard": false], context: context)
+        #expect(result.isError == true)
+        #expect(text(result) == "configure_ui(hardware_keyboard) is not available on physical devices. "
+            + "An iPhone hides its software keyboard only while a real keyboard is connected to it.")
+        #expect(!runner.calls.contains { $0.commandLine.contains("settings appearance") })
+    }
+
     @Test func grantNeedsABundleId() async throws {
         let result = try await ISimServer.makeRegistry(toolsets: [.system])
             .call("set_permission", arguments: ["device": "SIM-1", "action": "grant", "service": "photos"], context: context)

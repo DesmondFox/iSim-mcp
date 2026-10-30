@@ -52,6 +52,7 @@ Push-уведомлений в `devicectl` нет (проверены все 102
 Нужные приватные API для симулятора (проверено в спайке 0A, см. `Spikes/0A-SimBridge/README.md`):
 - ввод — XPC к демону CoreDevice `dtuhidd` внутри симулятора: `-[SimDevice lookup:error:]` → `xpc_endpoint_create_mach_port_4sim` → `xpc_connection_enable_sim2host_4sim`, сообщения `IndigoDigitizerEvent` / `IndigoButtonEvent` / `IndigoKeyboardButtonEvent`. Legacy Indigo (`SimulatorKit.SimDeviceLegacyHIDClient`) в Xcode 27 для кнопок и клавиатуры не работает, touch ненадёжен — не используем;
 - `-[SimDevice sendAccessibilityRequestAsync:completionQueue:completionHandler:]` + `AXPTranslator` — AX-дерево. Приложение отдаёт дерево, только если при его запуске в симуляторе был включён `com.apple.Accessibility ApplicationAccessibilityEnabled` (фаза 3).
+- `-[SimDevice setHardwareKeyboardEnabled:keyboardType:error:]` — Connect Hardware Keyboard (`configure_ui(hardware_keyboard)`), MIG-запрос `keyboard_set_enabled` к мосту в симуляторе. С подключённой клавиатурой iOS прячет программную; HID-ввод через `dtuhidd` работает при любом значении. `keyboardType` — тип клавиатуры Mac (`LMGetKbdType`); передаём ANSI (40), на набор US-символов ISO (41) не повлиял (проверено 30.10.2026).
 
 ## 2. Архитектура
 
@@ -267,7 +268,7 @@ iSim-mcp/
 
 | Тулз | Назначение | Ключевые параметры | Сим | Физ | Ф |
 |---|---|---|---|---|---|
-| `configure_ui` | Тема, Dynamic Type, Increase Contrast, Reduce Motion. Без параметров возвращает текущие значения | `appearance`, `content_size`, `increase_contrast`, `reduce_motion` | D | D | 2 |
+| `configure_ui` | Тема, Dynamic Type, Increase Contrast, Reduce Motion; на симуляторе — подключена ли аппаратная клавиатура (только запись, CoreSimulator её не отдаёт). Без параметров возвращает текущие значения | `appearance`, `content_size`, `increase_contrast`, `reduce_motion`, `hardware_keyboard` | D (`hardware_keyboard` — K) | D | 2 |
 | `set_permission` | Выдать, отозвать или сбросить разрешение без диалога | `action` (grant/revoke/reset), `service` (all, calendar, contacts, contacts-limited, location, location-always, photos, photos-add, media-library, microphone, motion, reminders, siri), `bundle_id` | S | — | 2 |
 | `set_location` | Задать координаты или сбросить | `latitude`,`longitude` \| `clear` | D | D | 2 |
 | `simulate_route` | Движение по точкам или встроенный сценарий; стоп — `set_location(clear)` | `waypoints[]` \| `scenario`, `speed` | D | D | 2 |
