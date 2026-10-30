@@ -16,8 +16,9 @@ enum SystemTools {
         name: "configure_ui",
         toolset: .system,
         description: """
-            Light/dark appearance, Dynamic Type text size, Increase Contrast and Reduce Motion. \
-            Omitted settings stay as they are; with no parameters, returns the current values. Works on simulators and iPhones.
+            Light/dark appearance, Dynamic Type text size, Increase Contrast and Reduce Motion, and on a simulator \
+            whether a hardware keyboard is connected. Omitted settings stay as they are; with no parameters, returns \
+            the current values. Works on simulators and iPhones.
             """,
         inputSchema: Schema.deviceObject([
             "appearance": Schema.string("Interface style.", enum: InterfaceStyle.allCases.map(\.rawValue)),
@@ -25,6 +26,11 @@ enum SystemTools {
                                           enum: ContentSize.allCases.map(\.rawValue)),
             "increase_contrast": Schema.optionalBool("Increase Contrast on or off."),
             "reduce_motion": Schema.optionalBool("Reduce Motion on or off (fewer animations, steadier screenshots)."),
+            "hardware_keyboard": Schema.optionalBool("""
+                Simulators only: connect a hardware keyboard (iOS hides the software keyboard) or disconnect it \
+                (the software keyboard shows while a field has focus). type_text and press_key work either way. \
+                Cannot be read back, so it is not in the current values.
+                """),
         ]),
         annotations: .idempotent
     ) { arguments, context in
@@ -35,13 +41,27 @@ enum SystemTools {
             increaseContrast: try arguments.optionalBool("increase_contrast"),
             reduceMotion: try arguments.optionalBool("reduce_motion")
         )
+        let hardwareKeyboard = try arguments.optionalBool("hardware_keyboard")
         let device = try await context.session.resolveReady(try arguments.device)
         let backend = try context.router.backend(.appearance, for: device, as: (any AppearanceConfiguring).self)
-        if changes.isEmpty {
+        // Refused on an iPhone before anything changes.
+        let keyboard = try hardwareKeyboard.map { _ in
+            try context.router.backend(.hardwareKeyboard, for: device, as: (any HardwareKeyboardConnecting).self)
+        }
+        if changes.isEmpty && hardwareKeyboard == nil {
             return .text("\"\(device.name)\": " + describe(try await backend.appearance(udid: device.udid)))
         }
-        let settings = try await backend.setAppearance(udid: device.udid, changes)
-        return .text("Updated \"\(device.name)\": " + describe(settings))
+        var lines: [String] = []
+        if !changes.isEmpty {
+            lines.append("Updated \"\(device.name)\": " + describe(try await backend.setAppearance(udid: device.udid, changes)))
+        }
+        if let hardwareKeyboard, let keyboard {
+            try await keyboard.setHardwareKeyboard(udid: device.udid, connected: hardwareKeyboard)
+            lines.append(hardwareKeyboard
+                ? "Connected a hardware keyboard to \"\(device.name)\": iOS hides the software keyboard."
+                : "Disconnected the hardware keyboard from \"\(device.name)\": the software keyboard shows while a field has focus.")
+        }
+        return .text(lines.joined(separator: "\n"))
     }
 
     /// "dark appearance, text size extra-large, Increase Contrast on, Reduce Motion off"

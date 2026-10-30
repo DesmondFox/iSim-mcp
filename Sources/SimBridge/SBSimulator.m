@@ -93,4 +93,24 @@ static SimDeviceSet *_Nullable SBDeviceSet(NSString *developerDir, NSError **err
     return YES;
 }
 
+- (BOOL)setHardwareKeyboardConnected:(BOOL)connected error:(NSError **)error {
+    if (![self.device respondsToSelector:@selector(setHardwareKeyboardEnabled:keyboardType:error:)]) {
+        if (error) *error = SBMakeError(SBErrorUnavailable, @"CoreSimulator cannot connect a hardware keyboard in this Xcode.");
+        return NO;
+    }
+    if (!self.isBooted) {
+        if (error) *error = SBMakeError(SBErrorNotBooted, [NSString stringWithFormat:@"Simulator %@ is not booted.", self.name]);
+        return NO;
+    }
+    // An Apple ANSI keyboard: HIDKeyboard presses US keys. The Simulator app passes the Mac's own type.
+    static const uint8_t kANSIKeyboardType = 40;
+    NSError *underlying = nil;
+    if (![self.device setHardwareKeyboardEnabled:connected keyboardType:kANSIKeyboardType error:&underlying]) {
+        if (error) *error = SBMakeError(SBErrorUnavailable, [NSString stringWithFormat:@"CoreSimulator could not %@ the hardware keyboard: %@",
+                                                             connected ? @"connect" : @"disconnect", underlying.localizedDescription ?: @"unknown error"]);
+        return NO;
+    }
+    return YES;
+}
+
 @end

@@ -8,7 +8,8 @@ import Testing
 
 /// SimBridge stand-in: serves screens in order, moving to the next after every tap (and every key press with
 /// `advancingOnKeys`, every swipe with `advancingOnSwipes`), and records input.
-final class FakeUI: InputInjecting, AccessibilityProviding, GestureInjecting, MemoryWarningSending, @unchecked Sendable {
+final class FakeUI: InputInjecting, AccessibilityProviding, GestureInjecting, MemoryWarningSending, HardwareKeyboardConnecting,
+    @unchecked Sendable {
     private let lock = NSLock()
     private var screens: [UIElement]
     private let advancingOnKeys: Bool
@@ -21,6 +22,7 @@ final class FakeUI: InputInjecting, AccessibilityProviding, GestureInjecting, Me
     private(set) var paths: [[TouchSample]] = []
     private(set) var twoFingerPaths: [[TwoFingerSample]] = []
     private(set) var memoryWarnings = 0
+    private(set) var hardwareKeyboard: [Bool] = []
 
     init(_ screens: UIElement..., advancingOnKeys: Bool = false, advancingOnSwipes: Bool = false) {
         self.screens = screens
@@ -38,6 +40,10 @@ final class FakeUI: InputInjecting, AccessibilityProviding, GestureInjecting, Me
 
     func sendMemoryWarning(udid: String, pid: Int?) async throws {
         lock.withLock { memoryWarnings += 1 }
+    }
+
+    func setHardwareKeyboard(udid: String, connected: Bool) async throws {
+        lock.withLock { hardwareKeyboard.append(connected) }
     }
 
     func tap(udid: String, at point: CGPoint, count: Int, hold: Duration) async throws {

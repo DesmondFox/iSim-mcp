@@ -70,6 +70,11 @@ public protocol AppearanceConfiguring: Sendable {
     func setAppearance(udid: String, _ changes: AppearanceSettings) async throws -> AppearanceSettings
 }
 
+/// Whether iOS sees a hardware keyboard and so hides the software one. Typed keys reach the app either way.
+public protocol HardwareKeyboardConnecting: Sendable {
+    func setHardwareKeyboard(udid: String, connected: Bool) async throws
+}
+
 public protocol PermissionManaging: Sendable {
     /// `bundleId` is required for grant and revoke.
     func setPermission(udid: String, action: PermissionAction, service: PermissionService, bundleId: String?) async throws

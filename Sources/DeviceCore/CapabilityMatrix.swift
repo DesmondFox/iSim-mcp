@@ -21,6 +21,7 @@ public enum Capability: String, Sendable, CaseIterable {
     case addMedia
     case orientation
     case appearance
+    case hardwareKeyboard
     case permissions
     case location
     case statusBar
@@ -79,6 +80,7 @@ public enum Capability: String, Sendable, CaseIterable {
         case .addMedia: "add_media"
         case .orientation: "set_orientation"
         case .appearance: "configure_ui"
+        case .hardwareKeyboard: "configure_ui(hardware_keyboard)"
         case .permissions: "set_permission"
         case .location: "set_location"
         case .statusBar: "override_status_bar"
@@ -177,6 +179,7 @@ public struct CapabilityMatrix: Sendable {
         .addMedia: Entry(simulator: .simctl, physical: nil, hint: "Photos and contacts can only be added to a simulator's library."),
         .orientation: Entry(simulator: .devicectl, physical: .devicectl),
         .appearance: Entry(simulator: .devicectl, physical: .devicectl),
+        .hardwareKeyboard: Entry(simulator: .simbridge, physical: nil, hint: "An iPhone hides its software keyboard only while a real keyboard is connected to it."),
         .permissions: Entry(simulator: .simctl, physical: nil, hint: "Permissions on an iPhone can only be granted by accepting the system prompt."),
         .location: Entry(simulator: .devicectl, physical: .devicectl),
         .statusBar: Entry(simulator: .devicectl, physical: nil, hint: "iOS does not allow status bar overrides on physical devices."),
