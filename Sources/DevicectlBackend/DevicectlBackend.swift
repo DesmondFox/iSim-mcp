@@ -6,8 +6,8 @@ import ProcessKit
 public struct DevicectlBackend: DeviceListing, DeviceRebooting, AppManaging, AppInspecting, ScreenCapturing, DisplayInfoProviding,
     OrientationControlling, AppearanceConfiguring, LocationSimulating, StatusBarOverriding, BiometricsSimulating, PasteboardAccessing
 {
-    private let runner: any ProcessRunning
-    private let defaultTimeout: Duration
+    let runner: any ProcessRunning
+    let defaultTimeout: Duration
 
     public init(runner: any ProcessRunning, defaultTimeout: Duration = .seconds(60)) {
         self.runner = runner
@@ -262,7 +262,7 @@ public struct DevicectlBackend: DeviceListing, DeviceRebooting, AppManaging, App
     /// Runs devicectl with `--json-output -` and returns the `result` object.
     /// The JSON is on stdout even on failure, so errors come from it rather than from stderr.
     @discardableResult
-    private func devicectl(_ arguments: [String], timeout: Duration? = nil) async throws -> [String: Any] {
+    func devicectl(_ arguments: [String], timeout: Duration? = nil) async throws -> [String: Any] {
         // Global options go before the subcommand so they are never taken for app arguments after `--`.
         let result = try await runner.run("/usr/bin/xcrun", ["devicectl", "--quiet", "--json-output", "-"] + arguments, timeout: timeout ?? defaultTimeout)
         return try DevicectlParser.result(from: result, command: "devicectl " + arguments.prefix(3).joined(separator: " "))

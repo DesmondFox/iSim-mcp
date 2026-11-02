@@ -5,7 +5,7 @@ import SimBridge
 
 /// Input and UI inspection on simulators through private APIs (spike 0A): HID events go to `dtuhidd`
 /// inside the simulator, the UI tree comes from AccessibilityPlatformTranslation over CoreSimulator.
-public struct SimBridgeBackend: InputInjecting, AccessibilityProviding {
+public struct SimBridgeBackend: InputInjecting, AccessibilityProviding, GestureInjecting, MemoryWarningSending, HardwareKeyboardConnecting {
     /// Enough for any real screen; a runaway tree (a huge collection view) is cut here.
     public static let maxElements = 3000
     static let treeTimeout: TimeInterval = 15
@@ -38,6 +38,37 @@ public struct SimBridgeBackend: InputInjecting, AccessibilityProviding {
 
     public func pressButton(udid: String, _ button: HardwareButton, hold: Duration) async throws {
         try await channel(udid).run(HIDScript.button(button, hold: hold))
+    }
+
+    public func touchPath(udid: String, _ samples: [TouchSample]) async throws {
+        let geometry = try await geometry(udid: udid, checking: samples.map(\.point))
+        try await channel(udid).run(HIDScript.path(samples.map { (geometry.digitizerPoint($0.point), $0.offset) }))
+    }
+
+    public func twoFingerPath(udid: String, _ samples: [TwoFingerSample]) async throws {
+        let geometry = try await geometry(udid: udid, checking: samples.flatMap { [$0.first, $0.second] })
+        try await channel(udid).run(HIDScript.twoFingers(samples.map {
+            (geometry.digitizerPoint($0.first), geometry.digitizerPoint($0.second), $0.offset)
+        }))
+    }
+
+    /// Every app of the simulator gets the warning; `pid` is not needed.
+    public func sendMemoryWarning(udid: String, pid: Int?) async throws {
+        let simulator = try await state.simulator(udid: udid, developerDir: try developerDirectory())
+        do {
+            try simulator.simulateMemoryWarning()
+        } catch {
+            throw Self.translate(error)
+        }
+    }
+
+    public func setHardwareKeyboard(udid: String, connected: Bool) async throws {
+        let simulator = try await state.simulator(udid: udid, developerDir: try developerDirectory())
+        do {
+            try simulator.setHardwareKeyboardConnected(connected)
+        } catch {
+            throw Self.translate(error)
+        }
     }
 
     /// Checks HID input end to end: the daemon answers a barrier.

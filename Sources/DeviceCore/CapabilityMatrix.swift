@@ -21,6 +21,7 @@ public enum Capability: String, Sendable, CaseIterable {
     case addMedia
     case orientation
     case appearance
+    case hardwareKeyboard
     case permissions
     case location
     case statusBar
@@ -37,6 +38,25 @@ public enum Capability: String, Sendable, CaseIterable {
     case findElements
     case waitFor
     case systemAlert
+    case touchPath
+    case multiTouch
+    case shake
+    case clone
+    case rename
+    case memoryWarning
+    case recording
+    case logStream
+    case queryLogs
+    case consoleCapture
+    case crashReports
+    case containerFiles
+    case userDefaults
+    case writeUserDefaults
+    case keychain
+    case locale
+    case iCloudSync
+    case darwinNotification
+    case spawn
 
     /// Tool name used in error messages.
     public var toolName: String {
@@ -60,6 +80,7 @@ public enum Capability: String, Sendable, CaseIterable {
         case .addMedia: "add_media"
         case .orientation: "set_orientation"
         case .appearance: "configure_ui"
+        case .hardwareKeyboard: "configure_ui(hardware_keyboard)"
         case .permissions: "set_permission"
         case .location: "set_location"
         case .statusBar: "override_status_bar"
@@ -76,6 +97,25 @@ public enum Capability: String, Sendable, CaseIterable {
         case .findElements: "find_elements"
         case .waitFor: "wait_for"
         case .systemAlert: "handle_system_alert"
+        case .touchPath: "touch_path"
+        case .multiTouch: "multi_touch"
+        case .shake: "shake"
+        case .clone: "clone_device"
+        case .rename: "rename_device"
+        case .memoryWarning: "send_memory_warning"
+        case .recording: "start_recording"
+        case .logStream: "start_log_capture"
+        case .queryLogs: "query_logs"
+        case .consoleCapture: "launch_app(capture_output)"
+        case .crashReports: "list_crash_reports"
+        case .containerFiles: "list_container_files"
+        case .userDefaults: "read_user_defaults"
+        case .writeUserDefaults: "write_user_defaults"
+        case .keychain: "keychain"
+        case .locale: "set_locale"
+        case .iCloudSync: "icloud_sync"
+        case .darwinNotification: "post_darwin_notification"
+        case .spawn: "spawn_process"
         }
     }
 }
@@ -88,6 +128,8 @@ public enum BackendID: String, Sendable, CaseIterable {
     case simbridge
     /// The XCUITest agent running on the device (ISimAgent).
     case agent
+    /// lockdownd services on an iPhone, reached through usbmuxd with this Mac's pair record (os_trace_relay).
+    case lockdown
 }
 
 /// Which backend serves which capability on which kind of device (PLAN.md, section 5).
@@ -137,12 +179,14 @@ public struct CapabilityMatrix: Sendable {
         .addMedia: Entry(simulator: .simctl, physical: nil, hint: "Photos and contacts can only be added to a simulator's library."),
         .orientation: Entry(simulator: .devicectl, physical: .devicectl),
         .appearance: Entry(simulator: .devicectl, physical: .devicectl),
+        .hardwareKeyboard: Entry(simulator: .simbridge, physical: nil, hint: "An iPhone hides its software keyboard only while a real keyboard is connected to it."),
         .permissions: Entry(simulator: .simctl, physical: nil, hint: "Permissions on an iPhone can only be granted by accepting the system prompt."),
         .location: Entry(simulator: .devicectl, physical: .devicectl),
         .statusBar: Entry(simulator: .devicectl, physical: nil, hint: "iOS does not allow status bar overrides on physical devices."),
         .biometrics: Entry(simulator: .devicectl, physical: nil, hint: "Face ID and Touch ID can only be simulated on simulators."),
         .pasteboard: Entry(simulator: .devicectl, physical: .devicectl),
-        .push: Entry(simulator: .simctl, physical: nil, hint: "An iPhone receives pushes only through APNs, which iSim-mcp does not support yet."),
+        // mode=apns goes to Apple's servers from the Mac and needs no device backend.
+        .push: Entry(simulator: .simctl, physical: nil, hint: "An iPhone receives pushes only through APNs: use mode=apns with the app's device token."),
         .tap: uiEntry,
         .swipe: uiEntry,
         .typeText: uiEntry,
@@ -153,6 +197,30 @@ public struct CapabilityMatrix: Sendable {
         .findElements: uiEntry,
         .waitFor: uiEntry,
         .systemAlert: uiEntry,
+        .touchPath: uiEntry,
+        .multiTouch: uiEntry,
+        .shake: Entry(simulator: .simctl, physical: nil, hint: "iOS offers no way to simulate a shake on a physical device."),
+        .clone: Entry(simulator: .simctl, physical: nil, hint: "Only simulators can be cloned."),
+        .rename: Entry(simulator: .simctl, physical: .devicectl),
+        // devicectl reports success on a simulator, but the app gets nothing; CoreSimulator's own call works.
+        .memoryWarning: Entry(simulator: .simbridge, physical: .devicectl),
+        .recording: Entry(simulator: .simctl, physical: nil, hint: "iPhones do not offer screen recording to developer tools (no Screen Recording capability); take screenshots instead."),
+        // `log collect --device-udid` needs root; os_trace_relay, Console.app's source, does not.
+        .logStream: Entry(simulator: .simctl, physical: .lockdown),
+        .queryLogs: Entry(simulator: .simctl, physical: .lockdown),
+        .consoleCapture: Entry(simulator: .simctl, physical: .devicectl),
+        // Simulator apps are Mac processes: their reports are in ~/Library/Logs/DiagnosticReports.
+        .crashReports: Entry(simulator: .simctl, physical: .devicectl),
+        // A simulator's containers are folders on this Mac; devicectl has no List Files capability for simulators.
+        .containerFiles: Entry(simulator: .simctl, physical: .devicectl),
+        .userDefaults: Entry(simulator: .simctl, physical: .devicectl),
+        .writeUserDefaults: Entry(simulator: .simctl, physical: nil, hint: "An iPhone app's preferences cannot be changed from the Mac. To override a default for one run, launch the app with args [\"-key\", \"value\"]."),
+        .keychain: Entry(simulator: .simctl, physical: nil, hint: "Certificates go onto an iPhone as a configuration profile, installed by its owner in Settings."),
+        .locale: Entry(simulator: .simctl, physical: nil, hint: "Change the language in the iPhone's Settings, or try one in the app with launch_app args [\"-AppleLanguages\", \"(de)\", \"-AppleLocale\", \"de_DE\"]."),
+        .iCloudSync: Entry(simulator: .simctl, physical: nil, hint: "An iPhone syncs iCloud on its own."),
+        // devicectl has no Post Darwin Notification capability for simulators; notifyutil inside the simulator posts them.
+        .darwinNotification: Entry(simulator: .simctl, physical: .devicectl),
+        .spawn: Entry(simulator: .simctl, physical: nil, hint: "Arbitrary executables cannot be started on an iPhone."),
     ])
 
     /// Input and UI inspection: SimBridge on simulators, the on-device XCUITest agent on iPhones.
@@ -161,5 +229,6 @@ public struct CapabilityMatrix: Sendable {
     /// What the agent serves; on a simulator it takes these over from SimBridge once started there (ui_agent).
     public static let agentCapabilities: Set<Capability> = [
         .tap, .swipe, .typeText, .pressKey, .pressButton, .describeUI, .describePoint, .findElements, .waitFor, .systemAlert,
+        .touchPath, .multiTouch,
     ]
 }

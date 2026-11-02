@@ -39,6 +39,13 @@ struct DTUHIDMessage: Equatable, Sendable {
         ])
     }
 
+    /// Two fingers in one event: `pointTwo` is the second finger, in the same fractions.
+    static func touch(_ first: CGPoint, _ second: CGPoint, phase: TouchPhase) -> DTUHIDMessage {
+        var message = touch(first, phase: phase)
+        message.payload["pointTwo"] = .dictionary(["x": .double(Double(second.x)), "y": .double(Double(second.y))])
+        return message
+    }
+
     static func key(usage: UInt32, isDown: Bool) -> DTUHIDMessage {
         DTUHIDMessage(type: "IndigoKeyboardButtonEvent", payload: [
             "usageCode": .uint(UInt64(usage)),
@@ -127,6 +134,32 @@ enum HIDScript {
             steps += [.wait(pause), .send(.touch(point, phase: .move))]
         }
         steps.append(.send(.touch(end, phase: .end)))
+        return steps
+    }
+
+    /// One finger through the points at their offsets (digitizer fractions): down at the first, up at the last.
+    static func path(_ points: [(CGPoint, Duration)]) -> [HIDStep] {
+        guard let first = points.first, let last = points.last else { return [] }
+        var steps: [HIDStep] = [.send(.touch(first.0, phase: .start))]
+        var time = first.1
+        for (point, offset) in points.dropFirst() {
+            steps += [.wait(max(offset - time, .zero)), .send(.touch(point, phase: .move))]
+            time = offset
+        }
+        steps.append(.send(.touch(last.0, phase: .end)))
+        return steps
+    }
+
+    /// Two fingers moving together through their points at the offsets.
+    static func twoFingers(_ points: [(CGPoint, CGPoint, Duration)]) -> [HIDStep] {
+        guard let first = points.first, let last = points.last else { return [] }
+        var steps: [HIDStep] = [.send(.touch(first.0, first.1, phase: .start))]
+        var time = first.2
+        for (one, two, offset) in points.dropFirst() {
+            steps += [.wait(max(offset - time, .zero)), .send(.touch(one, two, phase: .move))]
+            time = offset
+        }
+        steps.append(.send(.touch(last.0, last.1, phase: .end)))
         return steps
     }
 

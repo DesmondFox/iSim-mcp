@@ -6,12 +6,16 @@ import ProcessKit
 public struct SimctlBackend: DeviceListing, SimulatorLifecycle, DeviceRebooting, AppManaging, AppInspecting, AppContainerLocating,
     ScreenCapturing, MediaImporting, PermissionManaging, PushSending
 {
-    private let runner: any ProcessRunning
-    private let defaultTimeout: Duration
+    let runner: any ProcessRunning
+    let defaultTimeout: Duration
+    /// Where macOS keeps crash reports; simulator apps are Mac processes, so theirs land here too.
+    let diagnosticReports: URL
 
-    public init(runner: any ProcessRunning, defaultTimeout: Duration = .seconds(60)) {
+    public init(runner: any ProcessRunning, defaultTimeout: Duration = .seconds(60), diagnosticReports: URL? = nil) {
         self.runner = runner
         self.defaultTimeout = defaultTimeout
+        self.diagnosticReports = diagnosticReports
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
     }
 
     // MARK: Devices
@@ -227,10 +231,10 @@ public struct SimctlBackend: DeviceListing, SimulatorLifecycle, DeviceRebooting,
 
     // MARK: Helpers
 
-    private let xcrun = "/usr/bin/xcrun"
+    let xcrun = "/usr/bin/xcrun"
 
     @discardableResult
-    private func simctl(_ arguments: [String], timeout: Duration? = nil) async throws -> ProcessResult {
+    func simctl(_ arguments: [String], timeout: Duration? = nil) async throws -> ProcessResult {
         let result = try await runner.run(xcrun, ["simctl"] + arguments, timeout: timeout ?? defaultTimeout)
         guard result.succeeded else { throw Self.failure(arguments, result) }
         return result

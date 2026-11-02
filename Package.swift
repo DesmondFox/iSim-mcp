@@ -17,6 +17,9 @@ let package = Package(
             name: "isim-mcp",
             dependencies: [
                 "ISimMCP",
+                "APNsBackend",
+                "LockdownBackend",
+                "DeviceCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),
             ]
@@ -29,6 +32,8 @@ let package = Package(
                 "DevicectlBackend",
                 "SimBridgeBackend",
                 "AgentBackend",
+                "APNsBackend",
+                "LockdownBackend",
                 "ProcessKit",
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "Logging", package: "swift-log"),
@@ -40,6 +45,12 @@ let package = Package(
         .target(name: "SimBridgeBackend", dependencies: ["DeviceCore", "SimBridge"]),
         // HTTP over usbmuxd to the XCUITest agent in Agent/, which it builds and runs with xcodebuild.
         .target(name: "AgentBackend", dependencies: ["DeviceCore", "ProcessKit"]),
+        // An iPhone's unified log through lockdown's os_trace_relay: usbmuxd, the pair record, TLS.
+        .target(name: "LockdownBackend", dependencies: ["DeviceCore", "ProcessKit", "LogPredicate"]),
+        // Objective-C: NSPredicate without its exceptions, for log entries filtered on the Mac.
+        .target(name: "LogPredicate"),
+        // Real pushes through Apple's servers, signed with the provider key given at startup.
+        .target(name: "APNsBackend", dependencies: ["DeviceCore"]),
         // Objective-C: private CoreSimulator and accessibility APIs, resolved at runtime.
         .target(name: "SimBridge", linkerSettings: [.linkedFramework("AppKit")]),
         .target(name: "ProcessKit"),
@@ -49,13 +60,16 @@ let package = Package(
         .testTarget(name: "DeviceCoreTests", dependencies: ["DeviceCore", "TestSupport"]),
         .testTarget(
             name: "BackendTests",
-            dependencies: ["SimctlBackend", "DevicectlBackend", "SimBridgeBackend", "AgentBackend", "DeviceCore", "ProcessKit", "TestSupport"],
+            dependencies: [
+                "SimctlBackend", "DevicectlBackend", "SimBridgeBackend", "AgentBackend", "APNsBackend", "LockdownBackend", "DeviceCore", "ProcessKit",
+                "TestSupport",
+            ],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "ISimMCPTests",
             dependencies: [
-                "ISimMCP", "DeviceCore", "SimctlBackend", "AgentBackend", "ProcessKit", "TestSupport", .product(name: "MCP", package: "swift-sdk"),
+                "ISimMCP", "DeviceCore", "SimctlBackend", "AgentBackend", "APNsBackend", "ProcessKit", "TestSupport", .product(name: "MCP", package: "swift-sdk"),
             ]
         ),
     ]

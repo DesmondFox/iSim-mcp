@@ -1,0 +1,115 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "--quiet",
+      "--json-output",
+      "-",
+      "device",
+      "info",
+      "files",
+      "--device",
+      "PHONE-1",
+      "--domain-type",
+      "systemCrashLogs"
+    ],
+    "commandType": "devicectl.device.info.files",
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.13.5"
+  },
+  "result": {
+    "deviceIdentifier": "PHONE-COREDEVICE-ID",
+    "domain": "systemCrashLogs",
+    "files": [
+      {
+        "metadata": {
+          "extendedAttributes": {},
+          "lastModDate": "2026-10-22T12:51:45.000Z",
+          "ownerGid": 250,
+          "ownerUid": 501,
+          "permissions": 493,
+          "size": 96
+        },
+        "name": "Assistant",
+        "relativePath": "Assistant",
+        "resources": {
+          "isDirectory": true,
+          "isHidden": false,
+          "isReadable": true,
+          "isSymbolicLink": false,
+          "isWritable": true
+        }
+      },
+      {
+        "metadata": {
+          "extendedAttributes": {
+            "DoNotSubmit": "1",
+            "LogType": "309_ISimAgentRunner-Runner",
+            "Signature": "d957552824c6cba0e33fa65878a681cc5358d81e",
+            "bug_type": "309",
+            "com.apple.dataprotection.policy.exception-applied-by": "com.apple.osanalyticshelper"
+          },
+          "lastModDate": "2026-10-22T16:16:32.000Z",
+          "ownerGid": 250,
+          "ownerUid": 501,
+          "permissions": 432,
+          "size": 35251
+        },
+        "name": "ISimAgentRunner-Runner-2026-10-22-191632.ips",
+        "relativePath": "ISimAgentRunner-Runner-2026-10-22-191632.ips",
+        "resources": {
+          "isDirectory": false,
+          "isHidden": false,
+          "isReadable": true,
+          "isSymbolicLink": false,
+          "isWritable": true
+        }
+      },
+      {
+        "metadata": {
+          "extendedAttributes": {
+            "LogType": "298",
+            "bug_type": "298"
+          },
+          "lastModDate": "2026-10-22T17:04:53.000Z",
+          "ownerGid": 250,
+          "ownerUid": 501,
+          "permissions": 432,
+          "size": 330275
+        },
+        "name": "JetsamEvent-2026-10-22-200453.ips",
+        "relativePath": "JetsamEvent-2026-10-22-200453.ips",
+        "resources": {
+          "isDirectory": false,
+          "isHidden": false,
+          "isReadable": true,
+          "isSymbolicLink": false,
+          "isWritable": true
+        }
+      },
+      {
+        "metadata": {
+          "extendedAttributes": {
+            "LogType": "145",
+            "bug_type": "145"
+          },
+          "lastModDate": "2026-10-20T14:52:23.000Z",
+          "ownerGid": 250,
+          "ownerUid": 0,
+          "permissions": 432,
+          "size": 12356
+        },
+        "name": "logd.diskwrites_resource-2026-10-20-175223.ips",
+        "relativePath": "logd.diskwrites_resource-2026-10-20-175223.ips",
+        "resources": {
+          "isDirectory": false,
+          "isHidden": false,
+          "isReadable": true,
+          "isSymbolicLink": false,
+          "isWritable": true
+        }
+      }
+    ]
+  }
+}

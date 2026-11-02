@@ -42,6 +42,13 @@ NS_SWIFT_SENDABLE
 /// 1 iPhone, 2 iPad.
 @property (readonly) NSInteger productFamily;
 
+/// What the Simulator app's Simulate Memory Warning does: every app of the simulator gets a memory warning.
+- (BOOL)simulateMemoryWarningWithError:(NSError **)error;
+
+/// What the Simulator app's Connect Hardware Keyboard does: with a keyboard connected iOS hides the software one.
+/// Keys sent through dtuhidd arrive either way. CoreSimulator cannot read the setting back.
+- (BOOL)setHardwareKeyboardConnected:(BOOL)connected error:(NSError **)error;
+
 @end
 
 /// A plain XPC connection to a mach service in the simulator's bootstrap namespace.

@@ -1,0 +1,70 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "--quiet",
+      "--json-output",
+      "-",
+      "device",
+      "info",
+      "files",
+      "--device",
+      "PHONE-1",
+      "--domain-type",
+      "appDataContainer",
+      "--domain-identifier",
+      "dev.isimmcp.testapp",
+      "--subdirectory",
+      "Documents"
+    ],
+    "commandType": "devicectl.device.info.files",
+    "environment": {},
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.13.5"
+  },
+  "result": {
+    "deviceIdentifier": "PHONE-COREDEVICE-ID",
+    "domain": "appDataContainer",
+    "files": [
+      {
+        "metadata": {
+          "extendedAttributes": {},
+          "lastModDate": "2026-10-23T09:35:37.000Z",
+          "ownerGid": 501,
+          "ownerUid": 501,
+          "permissions": 493,
+          "size": 96
+        },
+        "name": "sub",
+        "relativePath": "sub",
+        "resources": {
+          "isDirectory": true,
+          "isHidden": false,
+          "isReadable": true,
+          "isSymbolicLink": false,
+          "isWritable": true
+        }
+      },
+      {
+        "metadata": {
+          "extendedAttributes": {},
+          "lastModDate": "2026-10-23T09:35:36.000Z",
+          "ownerGid": 501,
+          "ownerUid": 501,
+          "permissions": 420,
+          "size": 12
+        },
+        "name": "sub/up.txt",
+        "relativePath": "sub/up.txt",
+        "resources": {
+          "isDirectory": false,
+          "isHidden": false,
+          "isReadable": true,
+          "isSymbolicLink": false,
+          "isWritable": true
+        }
+      }
+    ]
+  }
+}

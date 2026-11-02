@@ -7,6 +7,7 @@ import SimctlBackend
 enum DeviceTools {
     static let all: [ToolDefinition] = [
         listDevices, bootDevice, shutdownDevice, rebootDevice, openSimulatorApp, listRuntimes, createDevice, eraseDevice, deleteDevice,
+        cloneDevice, renameDevice,
     ]
 
     static let listDevices = ToolDefinition(
@@ -358,5 +359,69 @@ enum DeviceTools {
         try await lifecycle.delete(udid: device.udid)
         if await context.session.activeUDID == device.udid { await context.session.clearActive() }
         return .text("Deleted \"\(device.name)\" (\(device.udid)).")
+    }
+
+    static let cloneDevice = ToolDefinition(
+        name: "clone_device",
+        toolset: .devices,
+        description: """
+            Copy a simulator with its apps, data and settings: a snapshot to come back to, or a second simulator in the same state. \
+            simctl clones only shut-down simulators; shutdown: true shuts a booted one down, clones it and boots it again. Simulators only.
+            """,
+        inputSchema: Schema.deviceObject([
+            "name": Schema.string("Name of the copy. Default: the simulator's name with \" copy\"."),
+            "shutdown": Schema.bool("Shut a booted simulator down for the copy and boot it again afterwards.", default: false),
+            "boot": Schema.bool("Boot the copy and wait until it is ready.", default: false),
+        ]),
+        annotations: .mutating
+    ) { arguments, context in
+        try context.requireXcode()
+        let device = try await context.session.resolve(try arguments.device)
+        let cloner = try context.router.backend(.clone, for: device, as: (any DeviceCloning).self)
+        let lifecycle = try context.router.backend(.boot, for: device, as: (any SimulatorLifecycle).self)
+        let name = try arguments.string("name").flatMap { $0.isEmpty ? nil : $0 } ?? "\(device.name) copy"
+        let wasRunning = device.state != .shutdown
+        if wasRunning {
+            guard try arguments.bool("shutdown", default: false) else {
+                throw ISimError.invalidArgument("\"\(device.name)\" is \(device.state.rawValue); simctl clones only shut-down simulators. "
+                    + "Pass shutdown: true to shut it down, clone it and boot it again, or call shutdown_device first.")
+            }
+            try await lifecycle.shutdown(udid: device.udid)
+        }
+        let udid: String
+        do {
+            udid = try await cloner.clone(udid: device.udid, name: name)
+        } catch {
+            if wasRunning { try? await lifecycle.boot(udid: device.udid, wait: true) }
+            throw error
+        }
+        var text = "Cloned \"\(device.name)\" as \"\(name)\" (\(udid))."
+        if wasRunning {
+            try await lifecycle.boot(udid: device.udid, wait: true)
+            await context.accessibility.prepare(device)
+            text += " \"\(device.name)\" is booted again."
+        }
+        if try arguments.bool("boot", default: false) {
+            try await lifecycle.boot(udid: udid, wait: true)
+            text += " The copy is booted."
+        }
+        return .text(text + " Pass the copy's UDID to other tools: both simulators may show the same apps and data.")
+    }
+
+    static let renameDevice = ToolDefinition(
+        name: "rename_device",
+        toolset: .devices,
+        description: "Rename a simulator or an iPhone. On an iPhone this changes the name its owner sees (Settings → General → About).",
+        inputSchema: Schema.deviceObject([
+            "name": Schema.string("The new name."),
+        ], required: ["name"]),
+        annotations: .idempotent
+    ) { arguments, context in
+        try context.requireXcode()
+        let name = try arguments.requiredString("name")
+        let device = try await context.session.resolve(try arguments.device)
+        if device.kind == .physical && !device.state.isReady { throw ISimError.deviceNotReady(device) }
+        try await context.router.backend(.rename, for: device, as: (any DeviceRenaming).self).rename(udid: device.udid, name: name)
+        return .text("Renamed \"\(device.name)\" (\(device.udid)) to \"\(name)\".")
     }
 }

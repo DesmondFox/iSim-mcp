@@ -222,3 +222,22 @@ public enum DevicectlParser {
         return processes.sorted { ($0.bundleId == nil ? 1 : 0, $0.name.lowercased()) < ($1.bundleId == nil ? 1 : 0, $1.name.lowercased()) }
     }
 }
+
+extension DevicectlParser {
+    /// `device info files`: entries named relative to the listed directory, which is `subpath` of the container.
+    public static func files(from result: [String: Any], under subpath: String) -> [ContainerFile] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return (result["files"] as? [[String: Any]] ?? []).compactMap { entry in
+            guard let path = entry["relativePath"] as? String ?? entry["name"] as? String else { return nil }
+            let metadata = entry["metadata"] as? [String: Any] ?? [:]
+            let resources = entry["resources"] as? [String: Any] ?? [:]
+            let isDirectory = resources["isDirectory"] as? Bool ?? false
+            return ContainerFile(
+                path: subpath.isEmpty ? path : subpath + "/" + path,
+                isDirectory: isDirectory,
+                size: isDirectory ? nil : metadata["size"] as? Int,
+                modified: (metadata["lastModDate"] as? String).flatMap { formatter.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) })
+        }
+    }
+}

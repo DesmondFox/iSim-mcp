@@ -121,10 +121,18 @@ static BOOL ISimWait(dispatch_semaphore_t semaphore, NSTimeInterval timeout) {
 
 + (BOOL)synthesize:(id)path name:(NSString *)name orientation:(UIInterfaceOrientation)orientation
           duration:(NSTimeInterval)duration error:(NSError **)error {
+  return [self synthesizePaths:@[path] name:name orientation:orientation duration:duration error:error];
+}
+
+/// One event record with a pointer path per finger: the fingers move at the same time.
++ (BOOL)synthesizePaths:(NSArray *)paths name:(NSString *)name orientation:(UIInterfaceOrientation)orientation
+               duration:(NSTimeInterval)duration error:(NSError **)error {
   id record = [NSClassFromString(@"XCSynthesizedEventRecord") alloc];
   record = ((id (*)(id, SEL, NSString *, UIInterfaceOrientation))objc_msgSend)(
     record, NSSelectorFromString(@"initWithName:interfaceOrientation:"), name, orientation);
-  ((void (*)(id, SEL, id))objc_msgSend)(record, NSSelectorFromString(@"addPointerEventPath:"), path);
+  for (id path in paths) {
+    ((void (*)(id, SEL, id))objc_msgSend)(record, NSSelectorFromString(@"addPointerEventPath:"), path);
+  }
 
   dispatch_semaphore_t done = dispatch_semaphore_create(0);
   __block NSError *failure = nil;
@@ -173,6 +181,33 @@ static BOOL ISimWait(dispatch_semaphore_t semaphore, NSTimeInterval timeout) {
   }
   [self path:path liftUpAt:duration];
   return [self synthesize:path name:@"swipe" orientation:orientation duration:duration error:error];
+}
+
++ (BOOL)performTouchPaths:(NSArray<NSArray<NSDictionary *> *> *)fingers
+                orientation:(UIInterfaceOrientation)orientation error:(NSError **)error {
+  NSMutableArray *paths = [NSMutableArray array];
+  NSTimeInterval duration = 0;
+  for (NSArray<NSDictionary *> *points in fingers) {
+    if (points.count == 0) continue;
+    NSDictionary *first = points.firstObject;
+    id path = [NSClassFromString(@"XCPointerEventPath") alloc];
+    path = ((id (*)(id, SEL, CGPoint, double))objc_msgSend)(
+      path, NSSelectorFromString(@"initForTouchAtPoint:offset:"),
+      CGPointMake([first[@"x"] doubleValue], [first[@"y"] doubleValue]), [first[@"t"] doubleValue]);
+    for (NSUInteger index = 1; index < points.count; index++) {
+      NSDictionary *point = points[index];
+      [self path:path moveTo:CGPointMake([point[@"x"] doubleValue], [point[@"y"] doubleValue]) at:[point[@"t"] doubleValue]];
+    }
+    NSTimeInterval end = [points.lastObject[@"t"] doubleValue];
+    [self path:path liftUpAt:end];
+    duration = MAX(duration, end);
+    [paths addObject:path];
+  }
+  if (paths.count == 0) {
+    if (error) *error = ISimError(@"no touch points");
+    return NO;
+  }
+  return [self synthesizePaths:paths name:@"touch paths" orientation:orientation duration:duration error:error];
 }
 
 + (BOOL)canPressKeys {

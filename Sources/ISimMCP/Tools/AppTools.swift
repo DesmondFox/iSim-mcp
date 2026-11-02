@@ -5,6 +5,7 @@ import MCP
 enum AppTools {
     static let all: [ToolDefinition] = [
         listApps, getAppInfo, installApp, uninstallApp, launchApp, terminateApp, openURL, listProcesses, getAppContainer,
+        sendMemoryWarning,
     ]
 
     static let listApps = ToolDefinition(
@@ -78,13 +79,18 @@ enum AppTools {
     static let launchApp = ToolDefinition(
         name: "launch_app",
         toolset: .apps,
-        description: "Launch an app. By default a running instance is terminated first, so the app starts fresh.",
+        description: """
+            Launch an app. By default a running instance is terminated first, so the app starts fresh. \
+            capture_output keeps the app's stdout and stderr (print, NSLog to stderr) in a job that read_log_capture reads \
+            (logs toolset); stopping that job terminates the app.
+            """,
         inputSchema: Schema.deviceObject([
             "bundle_id": Schema.string("Bundle identifier of the app."),
             "args": Schema.stringArray("Command-line arguments for the app (e.g. -FeatureFlag YES)."),
             "env": Schema.stringMap("Environment variables for the app."),
             "terminate_existing": Schema.bool("Terminate a running instance before launching.", default: true),
             "start_stopped": Schema.bool("Start suspended, waiting for a debugger to attach.", default: false),
+            "capture_output": Schema.bool("Capture the app's stdout and stderr in a job until the app exits.", default: false),
         ], required: ["bundle_id"]),
         annotations: .mutating
     ) { arguments, context in
@@ -100,8 +106,61 @@ enum AppTools {
         let backend = try context.router.backend(.launchApp, for: device, as: (any AppManaging).self)
         // Apps load accessibility at launch; with it on, UI tools can read this app.
         await context.accessibility.prepare(device)
+        if try arguments.bool("capture_output", default: false) {
+            let console = try context.router.backend(.consoleCapture, for: device, as: (any ConsoleLaunching).self)
+            let job = try await context.jobs.start(
+                .console, command: console.consoleCommand(udid: device.udid, bundleId: bundleId, options: options), device: device,
+                title: "output of \(bundleId)")
+            // A failed launch ends the command at once; a running app keeps it going.
+            try await Task.sleep(for: consoleSettleTime)
+            guard try await context.jobs.job(job.id).isRunning else {
+                let output = try await context.jobs.read(job.id, maxLines: 20).lines
+                throw ISimError.commandFailed(command: "launch_app", message: output.isEmpty ? "the launch ended right away" : output.joined(separator: " "))
+            }
+            let processes = try? await context.router.backend(.listProcesses, for: device, as: (any AppInspecting).self).listProcesses(udid: device.udid)
+            let pid = processes?.first { $0.bundleId == bundleId }?.pid
+            return .text("Launched \(bundleId)\(pid.map { " (pid \($0))" } ?? "") on \"\(device.name)\" with its stdout and stderr going to "
+                + "job \(job.id). Read them with read_log_capture(job_id: \"\(job.id)\"); stop_log_capture ends the capture and terminates the app.")
+        }
         let pid = try await backend.launch(udid: device.udid, bundleId: bundleId, options: options)
         return .text("Launched \(bundleId)\(pid.map { " (pid \($0))" } ?? "") on \"\(device.name)\".")
+    }
+
+    /// How long a launch with captured output may take to fail.
+    static let consoleSettleTime = Duration.seconds(1)
+
+    static let sendMemoryWarning = ToolDefinition(
+        name: "send_memory_warning",
+        toolset: .apps,
+        description: """
+            Simulate a memory warning, as when the system runs low on memory: apps get didReceiveMemoryWarning and should free \
+            caches. On a simulator every app gets it; on an iPhone only the app given by bundle_id or pid.
+            """,
+        inputSchema: Schema.deviceObject([
+            "bundle_id": Schema.string("App to warn (iPhone); its main process must be running."),
+            "pid": Schema.integer("Process to warn instead of bundle_id (iPhone).", minimum: 1),
+        ]),
+        annotations: .mutating
+    ) { arguments, context in
+        try context.requireXcode()
+        let bundleId = try arguments.string("bundle_id").flatMap { $0.isEmpty ? nil : $0 }
+        var pid = try arguments.int("pid")
+        let device = try await context.session.resolveReady(try arguments.device)
+        let sender = try context.router.backend(.memoryWarning, for: device, as: (any MemoryWarningSending).self)
+        guard device.kind == .physical else {
+            try await sender.sendMemoryWarning(udid: device.udid, pid: nil)
+            return .text("Sent a memory warning to every app on \"\(device.name)\".")
+        }
+        if pid == nil {
+            guard let bundleId else { throw ISimError.invalidArgument("Pass `bundle_id` or `pid`: on an iPhone the warning goes to one process.") }
+            let processes = try await context.router.backend(.listProcesses, for: device, as: (any AppInspecting).self).listProcesses(udid: device.udid)
+            guard let process = processes.first(where: { $0.bundleId == bundleId }) else {
+                throw ISimError.notFound("\(bundleId) is not running on \"\(device.name)\". Start it with launch_app first.")
+            }
+            pid = process.pid
+        }
+        try await sender.sendMemoryWarning(udid: device.udid, pid: pid)
+        return .text("Sent a memory warning to \(bundleId ?? "process") (pid \(pid!)) on \"\(device.name)\".")
     }
 
     static let terminateApp = ToolDefinition(
